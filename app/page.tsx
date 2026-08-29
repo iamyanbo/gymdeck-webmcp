@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/no-static-element-interactions -- backdrops close only when the backdrop itself is clicked */
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -115,7 +116,7 @@ type Activity = {
 };
 
 type AppState = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   athlete: Athlete;
   library: ExerciseDefinition[];
   plan: TrainingPlan;
@@ -136,6 +137,28 @@ type ModelContextTool = {
 
 type ModelContext = {
   registerTool: (tool: ModelContextTool, options?: { signal?: AbortSignal }) => Promise<void>;
+};
+
+type PlanExerciseInput = {
+  exerciseName: string;
+  sets?: number;
+  reps?: number;
+  weight?: number;
+  restSeconds?: number;
+  durationMinutes?: number;
+};
+
+type PlanEditInput = {
+  day: string;
+  action: "rename" | "add_exercise" | "update_exercise" | "remove_exercise" | "move_exercise" | "delete_day";
+  exerciseName?: string;
+  newLabel?: string;
+  newFocus?: string;
+  sets?: number;
+  reps?: number;
+  weight?: number;
+  restSeconds?: number;
+  position?: number;
 };
 
 const STORAGE_KEY = "gymdeck-workspace-v1";
@@ -182,6 +205,7 @@ const BASE_LIBRARY: ExerciseDefinition[] = [
   { id: "curl", name: "Dumbbell Curl", muscle: "Biceps", equipment: "Dumbbells", movement: "Elbow flexion", instructions: "Keep elbows quiet and lower through a full range.", alternatives: ["cable-curl"] },
   { id: "cable-curl", name: "Cable Curl", muscle: "Biceps", equipment: "Cable", movement: "Elbow flexion", instructions: "Keep the shoulders still and squeeze at the top.", alternatives: ["curl"] },
   { id: "triceps-extension", name: "Dumbbell Triceps Extension", muscle: "Triceps", equipment: "Dumbbells", movement: "Elbow extension", instructions: "Keep elbows pointed forward and lower the dumbbell with control.", alternatives: ["push-up"] },
+  { id: "rope-pushdown", name: "Triceps Rope Pushdown", muscle: "Triceps", equipment: "Cable", movement: "Elbow extension", instructions: "Keep your elbows close to your sides and separate the rope at the bottom.", alternatives: ["triceps-extension", "push-up"] },
   { id: "push-up", name: "Push-Up", muscle: "Chest", equipment: "Bodyweight", movement: "Horizontal push", instructions: "Keep a straight line from shoulders to heels and lower as one unit.", alternatives: ["bench-press", "db-bench"] },
   { id: "treadmill", name: "Treadmill", muscle: "Cardio", equipment: "Treadmill", movement: "Steady-state cardio", instructions: "Choose a sustainable pace, keep posture tall, and ease into the first few minutes.", alternatives: ["stationary-bike", "elliptical"], category: "cardio" },
   { id: "stationary-bike", name: "Stationary Bike", muscle: "Cardio", equipment: "Bike", movement: "Low-impact cardio", instructions: "Set a smooth resistance and maintain a pace you can sustain for the full block.", alternatives: ["treadmill", "elliptical"], category: "cardio" },
@@ -209,6 +233,51 @@ function workoutExercise(libraryId: string, name: string, muscle: string, equipm
 function cardioWorkoutExercise(definition: ExerciseDefinition, durationMinutes: number): WorkoutExercise {
   const [cardioSet] = createSets(1, 0, 0);
   return { ...workoutExercise(definition.id, definition.name, definition.muscle, definition.equipment, 1, 0, 0, 0), durationMinutes, sets: [{ ...cardioSet, durationMinutes }] };
+}
+
+function normalizeName(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findExercise(library: ExerciseDefinition[], requestedName: string) {
+  const requested = normalizeName(requestedName);
+  const aliases: Record<string, string> = {
+    "bike": "stationary bike",
+    "exercise bike": "stationary bike",
+    "rowing": "rowing machine",
+    "rower": "rowing machine",
+    "stairs": "stair climber",
+    "stairmaster": "stair climber",
+    "rope pushdown": "triceps rope pushdown",
+    "tricep rope pushdown": "triceps rope pushdown",
+    "tricep pushdown": "triceps rope pushdown",
+  };
+  const target = aliases[requested] ?? requested;
+  return library.find((item) => normalizeName(item.name) === target)
+    ?? library.find((item) => normalizeName(item.name).includes(target) || target.includes(normalizeName(item.name)));
+}
+
+function findWorkoutExercise(exercises: WorkoutExercise[], requestedName: string) {
+  const requested = normalizeName(requestedName);
+  return exercises.find((item) => normalizeName(item.name) === requested)
+    ?? exercises.find((item) => normalizeName(item.name).includes(requested) || requested.includes(normalizeName(item.name)));
+}
+
+function migrateWorkspace(value: unknown): AppState {
+  if (!value || typeof value !== "object") throw new Error("Invalid workspace");
+  const parsed = value as Partial<AppState> & { schemaVersion?: number };
+  if (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) throw new Error("Unsupported workspace version");
+  if (!parsed.athlete || !parsed.plan || !parsed.currentWorkout || !Array.isArray(parsed.history)) throw new Error("Incomplete workspace");
+  const savedLibrary = Array.isArray(parsed.library) ? parsed.library : [];
+  const baseIds = new Set(BASE_LIBRARY.map((item) => item.id));
+  const customExercises = savedLibrary.filter((item) => item.custom || !baseIds.has(item.id));
+  return {
+    ...(parsed as AppState),
+    schemaVersion: 2,
+    library: [...BASE_LIBRARY, ...customExercises.filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)],
+    recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+    activities: Array.isArray(parsed.activities) ? parsed.activities : [],
+  };
 }
 
 function buildDemoState(): AppState {
@@ -242,7 +311,7 @@ function buildDemoState(): AppState {
     { id: "h8", date: isoDate(-2), exerciseId: "romanian-deadlift", exerciseName: "Romanian Deadlift", weight: 145, reps: 8, sets: 3, volume: 3480 },
   ];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     athlete: { name: "Alex", goal: "Strength", unit: "lb", experience: "Intermediate", equipment: ["Barbell", "Dumbbells", "Cable", "Machine"], weeklyDays: 3 },
     library: BASE_LIBRARY,
     plan: { id: "plan-foundation", name: "Foundation 3", goal: "Build strength with repeatable full-gym sessions", days: planDays },
@@ -290,7 +359,13 @@ function buildRecommendations(state: AppState): Recommendation[] {
 }
 
 export default function Home() {
-  const [state, setState] = useState<AppState>(() => buildDemoState());
+  const [state, setState] = useState<AppState>(() => {
+    if (typeof window === "undefined") return buildDemoState();
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (!saved) return buildDemoState();
+    try { return migrateWorkspace(JSON.parse(saved)); }
+    catch { window.localStorage.removeItem(STORAGE_KEY); return buildDemoState(); }
+  });
   const stateRef = useRef(state);
   const undoStack = useRef<AppState[]>([]);
   const importInput = useRef<HTMLInputElement>(null);
@@ -305,19 +380,16 @@ export default function Home() {
   const [libraryQuery, setLibraryQuery] = useState("");
   const [customExerciseOpen, setCustomExerciseOpen] = useState(false);
   const [customExercise, setCustomExercise] = useState({ name: "", muscle: "", equipment: "" });
+  const [planEditorDayId, setPlanEditorDayId] = useState<string | null | undefined>(undefined);
+  const [planDraft, setPlanDraft] = useState({ label: "", focus: "", exerciseName: "", sets: 3, reps: 10, weight: 0, restSeconds: 75 });
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
   const [webMcpStatus, setWebMcpStatus] = useState<"unavailable" | "registering" | "ready">("unavailable");
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as AppState;
-        if (parsed.schemaVersion === 1) { stateRef.current = parsed; setState(parsed); }
-      } catch { window.localStorage.removeItem(STORAGE_KEY); }
-    }
-    setHydrated(true);
+    const timer = window.setTimeout(() => setHydrated(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -337,6 +409,7 @@ export default function Home() {
   const commit = useCallback((message: string, source: Activity["source"], recipe: (draft: AppState) => void) => {
     const previous = stateRef.current;
     undoStack.current = [...undoStack.current.slice(-9), previous];
+    setCanUndo(true);
     const next = structuredClone(previous);
     recipe(next);
     next.activities.unshift({ id: uid("activity"), source, message, time: currentTime() });
@@ -359,6 +432,7 @@ export default function Home() {
     restored.activities.unshift({ id: uid("activity"), source: "System", message: "Undid the most recent change.", time: currentTime() });
     stateRef.current = restored;
     setState(restored);
+    setCanUndo(undoStack.current.length > 0);
   }, []);
 
   const logSetById = useCallback((exerciseId: string, setIndex: number, source: Activity["source"] = "You") => {
@@ -404,10 +478,99 @@ export default function Home() {
     });
   }, [commit]);
 
+  const setPlanDay = useCallback((focus: string, requestedLabel: string | undefined, exerciseInputs: PlanExerciseInput[], mode: "add" | "replace", source: Activity["source"] = "Agent") => {
+    const current = stateRef.current;
+    const resolved = exerciseInputs.map((input) => ({ input, definition: findExercise(current.library, input.exerciseName) }));
+    const missing = resolved.filter((item) => !item.definition).map((item) => item.input.exerciseName);
+    if (missing.length) return `Could not update the plan because these exercises are not in the library: ${missing.join(", ")}. Use search_exercises or add_exercise first.`;
+    const existing = mode === "replace" ? current.plan.days.find((day) => normalizeName(day.label) === normalizeName(requestedLabel ?? "") || normalizeName(day.focus) === normalizeName(focus)) : undefined;
+    const label = requestedLabel?.trim() || existing?.label || `Day ${current.plan.days.length + 1}`;
+    const prescriptions: Prescription[] = resolved.map(({ input, definition }) => ({
+      id: uid("prescription"),
+      libraryId: definition!.id,
+      name: definition!.name,
+      sets: input.durationMinutes ? 1 : Math.max(1, Number(input.sets ?? 3)),
+      reps: input.durationMinutes ? 0 : Math.max(1, Number(input.reps ?? 10)),
+      weight: input.durationMinutes ? 0 : Math.max(0, Number(input.weight ?? 0)),
+      restSeconds: input.durationMinutes ? 0 : Math.max(15, Number(input.restSeconds ?? 75)),
+      durationMinutes: input.durationMinutes ? Math.max(5, Math.round(Number(input.durationMinutes))) : undefined,
+    }));
+    commit(`${source === "Agent" ? "Agent" : "You"} ${existing ? "replaced" : "created"} ${label}: ${focus}.`, source, (draft) => {
+      const nextDay = { id: existing?.id ?? uid("day"), label, focus: focus.trim(), exercises: prescriptions };
+      if (existing) draft.plan.days.splice(draft.plan.days.findIndex((day) => day.id === existing.id), 1, nextDay);
+      else draft.plan.days.push(nextDay);
+    });
+    return `${existing ? "Replaced" : "Created"} ${label} (${focus}) with ${prescriptions.map((item) => item.name).join(", ")}.`;
+  }, [commit]);
+
+  const editPlanDay = useCallback((input: PlanEditInput, source: Activity["source"] = "Agent") => {
+    const current = stateRef.current;
+    const query = normalizeName(input.day);
+    const day = current.plan.days.find((item) => normalizeName(item.label) === query || normalizeName(item.focus) === query)
+      ?? current.plan.days.find((item) => normalizeName(item.label).includes(query) || normalizeName(item.focus).includes(query));
+    if (!day) return `Plan day not found: ${input.day}. Use get_training_plan first.`;
+    if (input.action === "delete_day") {
+      commit(`${source === "Agent" ? "Agent" : "You"} removed ${day.label} (${day.focus}) from the plan.`, source, (draft) => { draft.plan.days = draft.plan.days.filter((item) => item.id !== day.id); });
+      return `Removed ${day.label} (${day.focus}) and its ${day.exercises.length} exercises.`;
+    }
+    if (input.action === "rename") {
+      commit(`${source === "Agent" ? "Agent" : "You"} updated ${day.label}.`, source, (draft) => { const target = draft.plan.days.find((item) => item.id === day.id)!; if (input.newLabel?.trim()) target.label = input.newLabel.trim(); if (input.newFocus?.trim()) target.focus = input.newFocus.trim(); });
+      return `Updated ${day.label} to ${input.newLabel?.trim() || day.label} (${input.newFocus?.trim() || day.focus}).`;
+    }
+    const exerciseName = String(input.exerciseName ?? "").trim();
+    if (!exerciseName) return `exerciseName is required for ${input.action}.`;
+    const existing = day.exercises.find((item) => normalizeName(item.name) === normalizeName(exerciseName));
+    if (input.action === "add_exercise") {
+      const definition = findExercise(current.library, exerciseName);
+      if (!definition) return `Exercise not found: ${exerciseName}. Use search_exercises first.`;
+      if (existing) return `${definition.name} is already in ${day.label}; use update_exercise instead.`;
+      commit(`${source === "Agent" ? "Agent" : "You"} added ${definition.name} to ${day.label}.`, source, (draft) => {
+        const target = draft.plan.days.find((item) => item.id === day.id)!;
+        target.exercises.push({ id: uid("prescription"), libraryId: definition.id, name: definition.name, sets: Math.max(1, Number(input.sets ?? 3)), reps: Math.max(1, Number(input.reps ?? 10)), weight: Math.max(0, Number(input.weight ?? 0)), restSeconds: Math.max(15, Number(input.restSeconds ?? 75)) });
+      });
+      return `Added ${definition.name} to ${day.label}.`;
+    }
+    if (!existing) return `${exerciseName} is not in ${day.label}.`;
+    if (input.action === "remove_exercise") {
+      commit(`${source === "Agent" ? "Agent" : "You"} removed ${existing.name} from ${day.label}.`, source, (draft) => { const target = draft.plan.days.find((item) => item.id === day.id)!; target.exercises = target.exercises.filter((item) => item.id !== existing.id); });
+      return `Removed ${existing.name} from ${day.label}.`;
+    }
+    if (input.action === "move_exercise") {
+      const position = Math.max(1, Math.min(day.exercises.length, Number(input.position ?? day.exercises.length)));
+      commit(`${source === "Agent" ? "Agent" : "You"} moved ${existing.name} to position ${position} in ${day.label}.`, source, (draft) => { const target = draft.plan.days.find((item) => item.id === day.id)!; const from = target.exercises.findIndex((item) => item.id === existing.id); const [moved] = target.exercises.splice(from, 1); target.exercises.splice(position - 1, 0, moved); });
+      return `Moved ${existing.name} to position ${position} in ${day.label}.`;
+    }
+    commit(`${source === "Agent" ? "Agent" : "You"} updated ${existing.name} in ${day.label}.`, source, (draft) => { const target = draft.plan.days.find((item) => item.id === day.id)!.exercises.find((item) => item.id === existing.id)!; if (input.sets !== undefined) target.sets = Math.max(1, Number(input.sets)); if (input.reps !== undefined) target.reps = Math.max(1, Number(input.reps)); if (input.weight !== undefined) target.weight = Math.max(0, Number(input.weight)); if (input.restSeconds !== undefined) target.restSeconds = Math.max(15, Number(input.restSeconds)); });
+    return `Updated ${existing.name} in ${day.label}.`;
+  }, [commit]);
+
+  const loadPlanDay = useCallback((requestedDay: string, source: Activity["source"] = "Agent") => {
+    const query = normalizeName(requestedDay);
+    const day = stateRef.current.plan.days.find((item) => normalizeName(item.label) === query || normalizeName(item.focus) === query)
+      ?? stateRef.current.plan.days.find((item) => normalizeName(item.label).includes(query) || normalizeName(item.focus).includes(query));
+    if (!day) return `Plan day not found: ${requestedDay}.`;
+    commit(`${source === "Agent" ? "Agent" : "You"} loaded ${day.label} (${day.focus}) as today’s workout.`, source, (draft) => { draft.currentWorkout = { id: uid("workout"), name: day.focus, focus: day.exercises.map((item) => draft.library.find((entry) => entry.id === item.libraryId)?.muscle).filter(Boolean).slice(0, 3).join(" · "), date: isoDate(), status: "ready", exercises: day.exercises.map((item) => prescriptionToWorkoutExercise(item, draft.library)) }; });
+    return `Loaded ${day.label} (${day.focus}) with ${day.exercises.length} exercises as today’s workout.`;
+  }, [commit]);
+
+  const addCardioBlock = useCallback((machine: string, durationMinutes: number, destination: "today" | "plan" = "today", planDay?: string, source: Activity["source"] = "Agent") => {
+    const definition = findExercise(stateRef.current.library.filter((item) => item.category === "cardio"), machine);
+    const minutes = Math.round(Number(durationMinutes));
+    if (!definition || !Number.isFinite(minutes) || minutes < 5 || minutes > 180) return "Choose treadmill, bike, rowing machine, stair climber, or elliptical and a duration from 5 to 180 minutes.";
+    let targetDay = destination === "plan" ? stateRef.current.plan.days.at(-1) : undefined;
+    if (destination === "plan" && planDay) { const query = normalizeName(planDay); targetDay = stateRef.current.plan.days.find((day) => normalizeName(day.label) === query || normalizeName(day.focus) === query) ?? targetDay; }
+    if (destination === "plan" && !targetDay) return "No plan day is available for the cardio block.";
+    commit(`${source === "Agent" ? "Agent" : "You"} added ${minutes} min of ${definition.name} cardio ${destination === "plan" ? `to ${targetDay!.label}` : "after today’s strength work"}.`, source, (draft) => {
+      if (destination === "plan") draft.plan.days.find((day) => day.id === targetDay!.id)!.exercises.push({ id: uid("prescription"), libraryId: definition.id, name: definition.name, sets: 1, reps: 0, weight: 0, restSeconds: 0, durationMinutes: minutes });
+      else draft.currentWorkout.exercises.push(cardioWorkoutExercise(definition, minutes));
+    });
+    return `Added ${minutes} minutes of ${definition.name} ${destination === "plan" ? `to ${targetDay!.label}` : "after today’s workout"}.`;
+  }, [commit]);
+
   useEffect(() => {
     const modelContext = (document as unknown as { modelContext?: ModelContext }).modelContext;
-    if (!modelContext) { setWebMcpStatus("unavailable"); return; }
-    setWebMcpStatus("registering");
+    if (!modelContext) { queueMicrotask(() => setWebMcpStatus("unavailable")); return; }
+    queueMicrotask(() => setWebMcpStatus("registering"));
     const controller = new AbortController();
     const readOnly = { readOnlyHint: true, untrustedContentHint: false };
     const write = { readOnlyHint: false, untrustedContentHint: false };
@@ -415,6 +578,7 @@ export default function Home() {
     const tools: ModelContextTool[] = [
       { name: "get_athlete_profile", title: "Get athlete profile", description: "Read the current GymDeck athlete profile, training goal, units, experience, equipment, and weekly schedule.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => JSON.stringify(stateRef.current.athlete) },
       { name: "get_today_workout", title: "Get today’s workout", description: "Read today’s workout, including exercise order, target and completed sets, reps, weights, rest times, and status.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => JSON.stringify(stateRef.current.currentWorkout) },
+      { name: "get_training_plan", title: "Get training plan", description: "Read the complete saved training plan, including every day, focus, exercise, prescription, and cardio block. Use this before changing an existing plan day.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => JSON.stringify(stateRef.current.plan) },
       { name: "search_exercises", title: "Search exercises", description: "Search GymDeck’s exercise library by name, muscle, movement, or equipment before adding or swapping an exercise.", inputSchema: objectSchema({ query: { type: "string", description: "Exercise, muscle, movement, or equipment to search for." } }, ["query"]), annotations: readOnly, execute: async ({ query }) => {
         const term = String(query).toLowerCase();
         return JSON.stringify(stateRef.current.library.filter((item) => [item.name, item.muscle, item.equipment, item.movement].some((value) => value.toLowerCase().includes(term))));
@@ -436,7 +600,7 @@ export default function Home() {
               { id: "overhead-press", sets: 3, reps: 8, weight: 65, restSeconds: 120 },
               { id: "lateral-raise", sets: 3, reps: 15, weight: 15, restSeconds: 60 },
               { id: "curl", sets: 3, reps: 12, weight: 25, restSeconds: 60 },
-              { id: "triceps-extension", sets: 3, reps: 12, weight: 20, restSeconds: 60 },
+              { id: "rope-pushdown", sets: 3, reps: 12, weight: 30, restSeconds: 60 },
             ]
           : normalizedFocus.includes("leg") || normalizedFocus.includes("lower")
             ? [
@@ -457,42 +621,22 @@ export default function Home() {
                 ];
         const dayLabel = String(label ?? "").trim() || `Day ${stateRef.current.plan.days.length + 1}`;
         const dayFocus = requestedFocus || "Focused training";
-        let addedExercises: string[] = [];
-        commit(`Agent added ${dayFocus} to ${stateRef.current.plan.name}.`, "Agent", (draft) => {
-          const exercises = presets.map((prescription) => {
-            const exercise = draft.library.find((item) => item.id === prescription.id)!;
-            return { id: uid("prescription"), libraryId: exercise.id, name: exercise.name, sets: prescription.sets, reps: prescription.reps, weight: prescription.weight, restSeconds: prescription.restSeconds };
-          });
-          addedExercises = exercises.map((exercise) => exercise.name);
-          draft.plan.days.push({ id: uid("day"), label: dayLabel, focus: dayFocus, exercises });
-        });
-        return `Added ${dayFocus} as ${dayLabel}: ${addedExercises.join(", ")}.`;
+        return setPlanDay(dayFocus, dayLabel, presets.map((prescription) => ({ exerciseName: stateRef.current.library.find((item) => item.id === prescription.id)?.name ?? prescription.id, sets: prescription.sets, reps: prescription.reps, weight: prescription.weight, restSeconds: prescription.restSeconds })), "add", "Agent");
       } },
-      { name: "add_cardio_block", title: "Add timed cardio", description: "Add a timed cardio block after today’s strength work. Use this when someone says they want 20 minutes of cardio and specifies or needs to choose a treadmill, stationary bike, rowing machine, stair climber, or elliptical. Cardio is logged as duration, not fake reps or weight.", inputSchema: objectSchema({ machine: { type: "string", enum: ["Treadmill", "Stationary Bike", "Rowing Machine", "Stair Climber", "Elliptical"], description: "The cardio machine to use." }, durationMinutes: { type: "integer", minimum: 5, maximum: 180, description: "Planned cardio duration in minutes." }, destination: { type: "string", enum: ["today", "plan"], description: "Add to the end of today’s workout (default) or the newest plan day." } }, ["machine", "durationMinutes"]), annotations: write, execute: async ({ machine, durationMinutes, destination }) => {
-        const definition = stateRef.current.library.find((item) => item.category === "cardio" && item.name.toLowerCase() === String(machine).toLowerCase());
-        const minutes = Math.round(Number(durationMinutes));
-        if (!definition || !Number.isFinite(minutes) || minutes < 5 || minutes > 180) return "Choose a supported cardio machine and a duration from 5 to 180 minutes.";
-        const target = String(destination ?? "today");
-        commit(`Agent added ${minutes} min of ${definition.name} cardio after the strength work.`, "Agent", (draft) => {
-          if (target === "plan") {
-            const day = draft.plan.days.at(-1);
-            if (!day) return;
-            day.exercises.push({ id: uid("prescription"), libraryId: definition.id, name: definition.name, sets: 1, reps: 0, weight: 0, restSeconds: 0, durationMinutes: minutes });
-          } else {
-            draft.currentWorkout.exercises.push(cardioWorkoutExercise(definition, minutes));
-          }
-        });
-        return `Added ${minutes} minutes of ${definition.name} ${target === "plan" ? "to the end of the newest plan day" : "after today’s strength work"}.`;
-      } },
+      { name: "set_plan_day", title: "Create or replace plan day", description: "Create a saved workout day with an exact exercise list, or replace one existing day. Use this for requests like 'make me a shoulders and arms day' when the requested exercises or prescriptions are explicit. This changes the saved plan, not only today’s workout.", inputSchema: objectSchema({ focus: { type: "string", description: "Human-readable focus such as Shoulders & Arms." }, dayLabel: { type: "string", description: "Day label such as Day 4 or Saturday." }, mode: { type: "string", enum: ["add", "replace"], description: "Add a new day or replace the day matching dayLabel/focus." }, exercises: { type: "array", minItems: 1, maxItems: 12, items: { type: "object", properties: { exerciseName: { type: "string" }, sets: { type: "integer", minimum: 1, maximum: 10 }, reps: { type: "integer", minimum: 1, maximum: 100 }, weight: { type: "number", minimum: 0 }, restSeconds: { type: "integer", minimum: 15, maximum: 600 }, durationMinutes: { type: "integer", minimum: 5, maximum: 180 } }, required: ["exerciseName"], additionalProperties: false } } }, ["focus", "mode", "exercises"]), annotations: write, execute: async ({ focus, dayLabel, mode, exercises }) => setPlanDay(String(focus), dayLabel === undefined ? undefined : String(dayLabel), Array.isArray(exercises) ? exercises as PlanExerciseInput[] : [], String(mode) === "replace" ? "replace" : "add", "Agent") },
+      { name: "edit_plan_day", title: "Edit saved plan day", description: "Make one precise change to an existing saved plan day: rename it, add/update/remove/reorder an exercise, or delete the day. Use this instead of editing today’s workout when the user asks to change their plan.", inputSchema: objectSchema({ day: { type: "string", description: "Existing day label or focus." }, action: { type: "string", enum: ["rename", "add_exercise", "update_exercise", "remove_exercise", "move_exercise", "delete_day"] }, exerciseName: { type: "string" }, newLabel: { type: "string" }, newFocus: { type: "string" }, sets: { type: "integer", minimum: 1, maximum: 10 }, reps: { type: "integer", minimum: 1, maximum: 100 }, weight: { type: "number", minimum: 0 }, restSeconds: { type: "integer", minimum: 15, maximum: 600 }, position: { type: "integer", minimum: 1, maximum: 20 } }, ["day", "action"]), annotations: write, execute: async (input) => editPlanDay({ day: String(input.day), action: String(input.action) as PlanEditInput["action"], exerciseName: input.exerciseName === undefined ? undefined : String(input.exerciseName), newLabel: input.newLabel === undefined ? undefined : String(input.newLabel), newFocus: input.newFocus === undefined ? undefined : String(input.newFocus), sets: input.sets === undefined ? undefined : Number(input.sets), reps: input.reps === undefined ? undefined : Number(input.reps), weight: input.weight === undefined ? undefined : Number(input.weight), restSeconds: input.restSeconds === undefined ? undefined : Number(input.restSeconds), position: input.position === undefined ? undefined : Number(input.position) }, "Agent") },
+      { name: "load_plan_day", title: "Load plan day as today", description: "Load one saved plan day into Today’s Workout. This is the explicit bridge between editing a plan and performing that session.", inputSchema: objectSchema({ day: { type: "string", description: "Saved day label or focus." } }, ["day"]), annotations: write, execute: async ({ day }) => loadPlanDay(String(day), "Agent") },
+      { name: "add_cardio_block", title: "Add timed cardio", description: "Add timed cardio to today’s workout or a named saved plan day. Accepts natural machine names such as bike, rower, StairMaster, treadmill, or elliptical and records minutes rather than fake reps.", inputSchema: objectSchema({ machine: { type: "string", description: "Cardio machine in natural wording, e.g. bike or StairMaster." }, durationMinutes: { type: "integer", minimum: 5, maximum: 180 }, destination: { type: "string", enum: ["today", "plan"] }, planDay: { type: "string", description: "Optional saved day label/focus when destination is plan." } }, ["machine", "durationMinutes", "destination"]), annotations: write, execute: async ({ machine, durationMinutes, destination, planDay }) => addCardioBlock(String(machine), Number(durationMinutes), String(destination) === "plan" ? "plan" : "today", planDay === undefined ? undefined : String(planDay), "Agent") },
+      { name: "undo_last_change", title: "Undo last GymDeck change", description: "Undo exactly the most recent visible GymDeck change. Use when the user explicitly asks to undo an accidental plan or workout edit.", inputSchema: objectSchema({}), annotations: write, execute: async () => { if (!undoStack.current.length) return "There is no recent GymDeck change to undo."; undo(); return "Undid the most recent GymDeck change. Review the visible activity history to confirm."; } },
       { name: "add_exercise", title: "Add exercise", description: "Add an exercise from the GymDeck library to today’s workout with a target prescription.", inputSchema: objectSchema({ exerciseName: { type: "string" }, sets: { type: "integer", minimum: 1, maximum: 10 }, reps: { type: "integer", minimum: 1, maximum: 100 }, weight: { type: "number", minimum: 0 } }, ["exerciseName", "sets", "reps", "weight"]), annotations: write, execute: async ({ exerciseName, sets, reps, weight }) => {
-        const definition = stateRef.current.library.find((item) => item.name.toLowerCase() === String(exerciseName).toLowerCase());
+        const definition = findExercise(stateRef.current.library, String(exerciseName));
         if (!definition) return `Exercise not found: ${String(exerciseName)}. Use search_exercises first.`;
         if (definition.category === "cardio") return "Use add_cardio_block for a timed cardio session so GymDeck records minutes instead of reps and weight.";
         addExerciseToWorkout(definition, "Agent", Number(sets), Number(reps), Number(weight));
         return `Added ${definition.name}: ${Number(sets)} sets × ${Number(reps)} reps at ${Number(weight)} ${stateRef.current.athlete.unit}.`;
       } },
       { name: "update_exercise_prescription", title: "Update exercise prescription", description: "Change the target sets, reps, weight, or rest time for an exercise in today’s workout.", inputSchema: objectSchema({ exerciseName: { type: "string" }, sets: { type: "integer", minimum: 1, maximum: 10 }, reps: { type: "integer", minimum: 1, maximum: 100 }, weight: { type: "number", minimum: 0 }, restSeconds: { type: "integer", minimum: 15, maximum: 600 } }, ["exerciseName"]), annotations: write, execute: async ({ exerciseName, sets, reps, weight, restSeconds }) => {
-        const target = stateRef.current.currentWorkout.exercises.find((item) => item.name.toLowerCase() === String(exerciseName).toLowerCase());
+        const target = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName));
         if (!target) return `Exercise not found in today’s workout: ${String(exerciseName)}.`;
         commit(`Agent updated the prescription for ${target.name}.`, "Agent", (draft) => {
           const exercise = draft.currentWorkout.exercises.find((item) => item.id === target.id)!;
@@ -507,14 +651,14 @@ export default function Home() {
         return `Updated ${target.name}.`;
       } },
       { name: "swap_exercise", title: "Swap exercise", description: "Replace an exercise in today’s workout while preserving completed set history and recording the reason.", inputSchema: objectSchema({ currentExercise: { type: "string" }, replacementExercise: { type: "string" }, reason: { type: "string" } }, ["currentExercise", "replacementExercise", "reason"]), annotations: write, execute: async ({ currentExercise, replacementExercise, reason }) => {
-        const existing = stateRef.current.currentWorkout.exercises.find((item) => item.name.toLowerCase() === String(currentExercise).toLowerCase());
-        const replacement = stateRef.current.library.find((item) => item.name.toLowerCase() === String(replacementExercise).toLowerCase());
+        const existing = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(currentExercise));
+        const replacement = findExercise(stateRef.current.library, String(replacementExercise));
         if (!existing || !replacement) return "Could not find the current or replacement exercise. Use get_today_workout and search_exercises first.";
         swapExercise(existing.id, replacement.id, String(reason), "Agent");
         return `Replaced ${existing.name} with ${replacement.name}. Completed sets were preserved.`;
       } },
       { name: "log_set", title: "Log completed set", description: "Record one completed set in today’s workout using the actual reps, weight, and optional effort rating.", inputSchema: objectSchema({ exerciseName: { type: "string" }, setNumber: { type: "integer", minimum: 1 }, reps: { type: "integer", minimum: 0, maximum: 100 }, weight: { type: "number", minimum: 0 }, effort: { type: "integer", minimum: 1, maximum: 10 } }, ["exerciseName", "setNumber", "reps", "weight"]), annotations: write, execute: async ({ exerciseName, setNumber, reps, weight, effort }) => {
-        const exercise = stateRef.current.currentWorkout.exercises.find((item) => item.name.toLowerCase() === String(exerciseName).toLowerCase());
+        const exercise = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName));
         const index = Number(setNumber) - 1;
         if (!exercise || !exercise.sets[index]) return "Exercise or set not found in today’s workout.";
         updateQuietly((draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; set.actualReps = Number(reps); set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); });
@@ -522,7 +666,7 @@ export default function Home() {
         return `Logged set ${Number(setNumber)} of ${exercise.name}: ${Number(reps)} reps at ${Number(weight)} ${stateRef.current.athlete.unit}.`;
       } },
       { name: "edit_set", title: "Edit logged set", description: "Correct reps, weight, effort, or notes for a set in today’s workout without changing its completion status.", inputSchema: objectSchema({ exerciseName: { type: "string" }, setNumber: { type: "integer", minimum: 1 }, reps: { type: "integer", minimum: 0, maximum: 100 }, weight: { type: "number", minimum: 0 }, effort: { type: "integer", minimum: 1, maximum: 10 }, note: { type: "string" } }, ["exerciseName", "setNumber"]), annotations: write, execute: async ({ exerciseName, setNumber, reps, weight, effort, note }) => {
-        const exercise = stateRef.current.currentWorkout.exercises.find((item) => item.name.toLowerCase() === String(exerciseName).toLowerCase());
+        const exercise = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName));
         const index = Number(setNumber) - 1;
         if (!exercise || !exercise.sets[index]) return "Exercise or set not found in today’s workout.";
         commit(`Agent edited set ${Number(setNumber)} of ${exercise.name}.`, "Agent", (draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; if (reps !== undefined) set.actualReps = Number(reps); if (weight !== undefined) set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); if (note !== undefined) set.note = String(note); });
@@ -531,7 +675,7 @@ export default function Home() {
       { name: "adjust_current_workout", title: "Adjust current workout", description: "Adapt today’s remaining workout by shortening it, skipping an exercise, adding a set, or moving an exercise in the order.", inputSchema: objectSchema({ action: { type: "string", enum: ["shorten", "skip", "add_set", "move"] }, exerciseName: { type: "string" }, targetMinutes: { type: "integer", minimum: 5, maximum: 180 }, position: { type: "integer", minimum: 1 }, reason: { type: "string" } }, ["action"]), annotations: write, execute: async ({ action, exerciseName, targetMinutes, position, reason }) => {
         const actionName = String(action);
         commit(`Agent adjusted today’s workout: ${actionName.replace("_", " ")}${reason ? ` — ${String(reason)}` : ""}.`, "Agent", (draft) => {
-          const exercise = draft.currentWorkout.exercises.find((item) => item.name.toLowerCase() === String(exerciseName ?? "").toLowerCase());
+          const exercise = findWorkoutExercise(draft.currentWorkout.exercises, String(exerciseName ?? ""));
           if (actionName === "skip" && exercise) exercise.skipped = true;
           if (actionName === "add_set" && exercise) { const base = exercise.sets.at(-1) ?? createSets(1, 10, 0)[0]; exercise.sets.push({ ...base, id: uid("set"), completed: false }); }
           if (actionName === "move" && exercise) { const from = draft.currentWorkout.exercises.findIndex((item) => item.id === exercise.id); const [moved] = draft.currentWorkout.exercises.splice(from, 1); draft.currentWorkout.exercises.splice(Math.max(0, Math.min(draft.currentWorkout.exercises.length, Number(position ?? 1) - 1)), 0, moved); }
@@ -556,7 +700,7 @@ export default function Home() {
     ];
     Promise.allSettled(tools.map((tool) => modelContext.registerTool(tool, { signal: controller.signal }))).then((results) => setWebMcpStatus(results.every((result) => result.status === "fulfilled") ? "ready" : "unavailable"));
     return () => controller.abort();
-  }, [addExerciseToWorkout, commit, logSetById, swapExercise, updateQuietly]);
+  }, [addCardioBlock, addExerciseToWorkout, commit, editPlanDay, loadPlanDay, logSetById, setPlanDay, swapExercise, undo, updateQuietly]);
 
   const currentWorkout = state.currentWorkout;
   const completedSets = completedSetCount(currentWorkout);
@@ -583,8 +727,21 @@ export default function Home() {
     commit(nextStatus === "paused" ? "Paused today’s workout." : "Started today’s workout.", "You", (draft) => { draft.currentWorkout.status = nextStatus; draft.currentWorkout.startedAt ||= new Date().toISOString(); });
   };
   const finishWorkout = () => { const recs = buildRecommendations(stateRef.current); commit(`Finished ${currentWorkout.name} with ${completedSets} logged sets.`, "You", (draft) => { draft.currentWorkout.status = "completed"; draft.recommendations = recs; }); setView("progress"); };
-  const startPlanDay = (day: PlanDay) => { commit(`Loaded ${day.focus} as today’s workout.`, "You", (draft) => { draft.currentWorkout = { id: uid("workout"), name: day.focus, focus: day.exercises.map((item) => draft.library.find((entry) => entry.id === item.libraryId)?.muscle).filter(Boolean).slice(0, 3).join(" · "), date: isoDate(), status: "ready", exercises: day.exercises.map((item) => prescriptionToWorkoutExercise(item, draft.library)) }; }); setView("today"); };
-  const addPlanDay = () => commit("Added a new training day to the plan.", "You", (draft) => { const starter = draft.library.find((item) => item.id === "goblet-squat")!; draft.plan.days.push({ id: uid("day"), label: `Day ${draft.plan.days.length + 1}`, focus: "New training day", exercises: [{ id: uid("prescription"), libraryId: starter.id, name: starter.name, sets: 3, reps: 10, weight: 0, restSeconds: 90 }] }); });
+  const startPlanDay = (day: PlanDay) => { loadPlanDay(day.label, "You"); setView("today"); };
+  const openPlanEditor = (day?: PlanDay) => { setPlanEditorDayId(day?.id ?? null); setPlanDraft({ label: day?.label ?? `Day ${stateRef.current.plan.days.length + 1}`, focus: day?.focus ?? "", exerciseName: "", sets: 3, reps: 10, weight: 0, restSeconds: 75 }); };
+  const savePlanEditor = () => {
+    const label = planDraft.label.trim(); const focus = planDraft.focus.trim();
+    if (!label || !focus) return;
+    const existing = planEditorDayId ? stateRef.current.plan.days.find((day) => day.id === planEditorDayId) : undefined;
+    if (!existing && !planDraft.exerciseName) return;
+    if (existing) {
+      editPlanDay({ day: existing.label, action: "rename", newLabel: label, newFocus: focus }, "You");
+      if (planDraft.exerciseName) editPlanDay({ day: label, action: "add_exercise", exerciseName: planDraft.exerciseName, sets: planDraft.sets, reps: planDraft.reps, weight: planDraft.weight, restSeconds: planDraft.restSeconds }, "You");
+    } else {
+      setPlanDay(focus, label, [{ exerciseName: planDraft.exerciseName, sets: planDraft.sets, reps: planDraft.reps, weight: planDraft.weight, restSeconds: planDraft.restSeconds }], "add", "You");
+    }
+    setPlanEditorDayId(undefined);
+  };
   const addCustomExercise = () => {
     if (!customExercise.name.trim()) return;
     const definition: ExerciseDefinition = { id: uid("custom"), name: customExercise.name.trim(), muscle: customExercise.muscle.trim() || "Custom", equipment: customExercise.equipment.trim() || "Other", movement: "Custom movement", instructions: "Use your preferred setup and controlled technique.", alternatives: [], custom: true };
@@ -594,10 +751,10 @@ export default function Home() {
   const exportData = () => { const blob = new Blob([JSON.stringify(stateRef.current, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `gymdeck-${isoDate()}.json`; anchor.click(); URL.revokeObjectURL(url); };
   const importData = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return;
-    try { const parsed = JSON.parse(await file.text()) as AppState; if (parsed.schemaVersion !== 1) throw new Error(); parsed.activities.unshift({ id: uid("activity"), source: "System", message: "Imported a GymDeck workspace.", time: currentTime() }); stateRef.current = parsed; setState(parsed); } catch { window.alert("That file is not a valid GymDeck export."); }
+    try { const parsed = migrateWorkspace(JSON.parse(await file.text())); parsed.activities.unshift({ id: uid("activity"), source: "System", message: "Imported and upgraded a GymDeck workspace.", time: currentTime() }); stateRef.current = parsed; setState(parsed); } catch { window.alert("That file is not a valid GymDeck export."); }
     event.target.value = "";
   };
-  const resetDemo = () => { if (!window.confirm("Reset GymDeck and reload the demo athlete? Your current local data will be replaced.")) return; const demo = buildDemoState(); stateRef.current = demo; undoStack.current = []; setState(demo); setProfileOpen(false); setView("today"); };
+  const resetDemo = () => { if (!window.confirm("Reset GymDeck and reload the demo athlete? Your current local data will be replaced.")) return; const demo = buildDemoState(); stateRef.current = demo; undoStack.current = []; setCanUndo(false); setState(demo); setProfileOpen(false); setView("today"); };
   const acceptRecommendation = (id: string) => { const recommendation = state.recommendations.find((item) => item.id === id); if (!recommendation) return; commit(`Accepted ${recommendation.suggestedWeight} ${state.athlete.unit} for ${recommendation.exerciseName} next session.`, "You", (draft) => { const target = draft.plan.days.flatMap((day) => day.exercises).find((item) => item.name === recommendation.exerciseName); if (target) target.weight = recommendation.suggestedWeight; const stored = draft.recommendations.find((item) => item.id === id); if (stored) stored.status = "accepted"; }); };
 
   if (!hydrated) return <main className="loading-shell"><div className="loading-mark">GD</div><p>Loading your training workspace…</p></main>;
@@ -613,7 +770,7 @@ export default function Home() {
           <NavButton active={view === "library"} icon="＋" label="Exercises" onClick={() => setView("library")} />
         </nav>
         <div className="sidebar-bottom">
-          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Ready when you are" : webMcpStatus === "registering" ? "Connecting tools" : "Browser mode"}</strong><small>{webMcpStatus === "ready" ? "16 WebMCP tools live" : "Tools activate in WebMCP"}</small></div></div>
+          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Ready when you are" : webMcpStatus === "registering" ? "Connecting tools" : "Browser mode"}</strong><small>{webMcpStatus === "ready" ? "21 WebMCP tools live" : "Tools activate in WebMCP"}</small></div></div>
           <button className="profile-card" onClick={() => setProfileOpen(true)}><span className="avatar">{state.athlete.name.slice(0, 1).toUpperCase()}</span><span><strong>{state.athlete.name}</strong><small>{state.athlete.goal} · {state.athlete.experience}</small></span><span className="chevron">›</span></button>
         </div>
       </aside>
@@ -647,13 +804,13 @@ export default function Home() {
           </section>
           <aside className="today-rail">
             <section className="rail-card next-card"><div className="rail-title"><span className="spark">✦</span><div><span className="eyebrow">NEXT MOVE</span><h3>Progression ready</h3></div></div><p>{state.recommendations[0]?.reason ?? "Complete today’s sets and GymDeck will prepare the next load."}</p>{state.recommendations[0] && <div className="weight-jump"><span>{state.recommendations[0].currentWeight}<small>{state.athlete.unit}</small></span><i>→</i><strong>{state.recommendations[0].suggestedWeight}<small>{state.athlete.unit}</small></strong></div>}<button onClick={() => setView("progress")}>Review recommendation <span>→</span></button></section>
-            <section className="rail-card activity-card"><div className="rail-card-heading"><div><span className="eyebrow">LIVE</span><h3>Agent activity</h3></div><button onClick={() => setActivityOpen(true)}>View all</button></div><div className="activity-feed">{state.activities.slice(0, 3).map((activity) => <div className="activity-item" key={activity.id}><span className={`activity-icon ${activity.source.toLowerCase()}`}>{activity.source === "Agent" ? "✦" : activity.source === "You" ? "Y" : "•"}</span><div><p>{activity.message}</p><small>{activity.time}</small></div></div>)}</div><button className="undo-button" onClick={undo} disabled={undoStack.current.length === 0}>↶ Undo last change</button></section>
+            <section className="rail-card activity-card"><div className="rail-card-heading"><div><span className="eyebrow">LIVE</span><h3>Agent activity</h3></div><button onClick={() => setActivityOpen(true)}>View all</button></div><div className="activity-feed">{state.activities.slice(0, 3).map((activity) => <div className="activity-item" key={activity.id}><span className={`activity-icon ${activity.source.toLowerCase()}`}>{activity.source === "Agent" ? "✦" : activity.source === "You" ? "Y" : "•"}</span><div><p>{activity.message}</p><small>{activity.time}</small></div></div>)}</div><button className="undo-button" onClick={undo} disabled={!canUndo}>↶ Undo last change</button></section>
             <section className="rail-card privacy-card"><span>⌂</span><div><strong>Private by default</strong><p>Your profile and training history stay in this browser.</p></div></section>
           </aside>
         </div>}
         {view === "plan" && <div className="page-content single-page">
-          <div className="page-hero-row"><div><span className="eyebrow">YOUR PROGRAM</span><h1>{state.plan.name}</h1><p>{state.plan.goal}. {state.plan.days.length} sessions per week.</p></div><button className="primary-button" onClick={addPlanDay}>＋ Add training day</button></div>
-          <div className="plan-grid">{state.plan.days.map((day, dayIndex) => <article className="plan-day" key={day.id}><div className="plan-day-top"><span>{day.label}</span><strong>{day.focus}</strong><small>{day.exercises.length} exercises · {day.exercises.reduce((sum, item) => sum + item.sets, 0)} sets</small></div><div className="plan-exercises">{day.exercises.map((exercise, index) => <div key={exercise.id}><span>{index + 1}</span><strong>{exercise.name}</strong><small>{exercise.durationMinutes ? `${exercise.durationMinutes} min cardio` : `${exercise.sets} × ${exercise.reps} · ${exercise.weight} ${state.athlete.unit}`}</small></div>)}</div><button onClick={() => startPlanDay(day)}>Start this session <span>→</span></button><span className="day-watermark">0{dayIndex + 1}</span></article>)}</div>
+          <div className="page-hero-row"><div><span className="eyebrow">YOUR PROGRAM</span><h1>{state.plan.name}</h1><p>{state.plan.goal}. {state.plan.days.length} sessions per week.</p></div><button className="primary-button" onClick={() => openPlanEditor()}>＋ Add training day</button></div>
+          <div className="plan-grid">{state.plan.days.map((day, dayIndex) => <article className="plan-day" key={day.id}><div className="plan-day-top"><span>{day.label}</span><strong>{day.focus}</strong><small>{day.exercises.length} exercises · {day.exercises.reduce((sum, item) => sum + item.sets, 0)} sets</small></div><div className="plan-exercises">{day.exercises.map((exercise, index) => <div key={exercise.id}><span>{index + 1}</span><strong>{exercise.name}</strong><small>{exercise.durationMinutes ? `${exercise.durationMinutes} min cardio` : `${exercise.sets} × ${exercise.reps} · ${exercise.weight} ${state.athlete.unit}`}</small></div>)}</div><div className="plan-day-actions"><button onClick={() => openPlanEditor(day)}>Edit day</button><button onClick={() => startPlanDay(day)}>Start session <span>→</span></button></div><span className="day-watermark">0{dayIndex + 1}</span></article>)}</div>
           <section className="plan-note"><span>✦</span><div><strong>Built for collaboration</strong><p>Ask your browser agent to create a new plan, change the weekly split, or adapt a session. Every change appears here and in the activity history.</p></div></section>
         </div>}
         {view === "progress" && <div className="page-content single-page">
@@ -672,9 +829,10 @@ export default function Home() {
       <nav className="mobile-nav" aria-label="Mobile navigation"><NavButton active={view === "today"} icon="⌁" label="Today" onClick={() => setView("today")} /><NavButton active={view === "plan"} icon="▤" label="Plan" onClick={() => setView("plan")} /><NavButton active={view === "progress"} icon="↗" label="Progress" onClick={() => setView("progress")} /><NavButton active={view === "library"} icon="＋" label="Exercises" onClick={() => setView("library")} /></nav>
       {timerSeconds > 0 && <div className="rest-timer"><span>REST</span><strong>{Math.floor(timerSeconds / 60)}:{String(timerSeconds % 60).padStart(2, "0")}</strong><button onClick={() => { setTimerRunning(false); setTimerSeconds(0); }}>Skip</button></div>}
       {swapExerciseId && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSwapExerciseId(null); }}><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="swap-title"><button className="modal-close" onClick={() => setSwapExerciseId(null)}>×</button><span className="eyebrow">ADAPT TODAY</span><h2 id="swap-title">Swap exercise</h2><p>Completed sets stay in your history. The replacement takes over the remaining work.</p><label>Replacement<select value={swapChoice} onChange={(event) => setSwapChoice(event.target.value)}>{state.library.filter((item) => item.id !== state.currentWorkout.exercises.find((exercise) => exercise.id === swapExerciseId)?.libraryId).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.equipment}</option>)}</select></label><label>Reason<input value={swapReason} onChange={(event) => setSwapReason(event.target.value)} /></label><button className="primary-button wide" onClick={() => swapExercise(swapExerciseId, swapChoice, swapReason)}>Apply swap</button></section></div>}
+      {planEditorDayId !== undefined && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlanEditorDayId(undefined); }}><section className="modal-card plan-editor-modal" role="dialog" aria-modal="true" aria-labelledby="plan-editor-title"><button className="modal-close" onClick={() => setPlanEditorDayId(undefined)}>×</button><span className="eyebrow">SAVED PLAN</span><h2 id="plan-editor-title">{planEditorDayId ? "Edit training day" : "Create training day"}</h2><p>Choose the day’s focus and first or next exercise. Nothing is added until you save.</p><div className="profile-form"><label>Day label<input value={planDraft.label} onChange={(event) => setPlanDraft((value) => ({ ...value, label: event.target.value }))} placeholder="Day 4" /></label><label>Focus<input value={planDraft.focus} onChange={(event) => setPlanDraft((value) => ({ ...value, focus: event.target.value }))} placeholder="Shoulders & Arms" /></label></div>{planEditorDayId && <div className="plan-editor-list">{state.plan.days.find((day) => day.id === planEditorDayId)?.exercises.map((exercise) => <div key={exercise.id}><span><strong>{exercise.name}</strong><small>{exercise.durationMinutes ? `${exercise.durationMinutes} min` : `${exercise.sets} × ${exercise.reps}`}</small></span><button onClick={() => editPlanDay({ day: state.plan.days.find((day) => day.id === planEditorDayId)!.label, action: "remove_exercise", exerciseName: exercise.name }, "You")}>Remove</button></div>)}</div>}<label>{planEditorDayId ? "Add another exercise (optional)" : "First exercise"}<select value={planDraft.exerciseName} onChange={(event) => setPlanDraft((value) => ({ ...value, exerciseName: event.target.value }))}><option value="">Select an exercise…</option>{state.library.filter((item) => item.category !== "cardio").map((item) => <option key={item.id} value={item.name}>{item.name} · {item.equipment}</option>)}</select></label><div className="prescription-grid"><label>Sets<input type="number" min="1" max="10" value={planDraft.sets} onChange={(event) => setPlanDraft((value) => ({ ...value, sets: Number(event.target.value) }))} /></label><label>Reps<input type="number" min="1" max="100" value={planDraft.reps} onChange={(event) => setPlanDraft((value) => ({ ...value, reps: Number(event.target.value) }))} /></label><label>Weight<input type="number" min="0" value={planDraft.weight} onChange={(event) => setPlanDraft((value) => ({ ...value, weight: Number(event.target.value) }))} /></label><label>Rest (sec)<input type="number" min="15" max="600" value={planDraft.restSeconds} onChange={(event) => setPlanDraft((value) => ({ ...value, restSeconds: Number(event.target.value) }))} /></label></div>{planEditorDayId && <button className="danger-button wide" onClick={() => { const day = state.plan.days.find((item) => item.id === planEditorDayId); if (day) editPlanDay({ day: day.label, action: "delete_day" }, "You"); setPlanEditorDayId(undefined); }}>Delete this day</button>}<button className="primary-button wide" disabled={!planDraft.label.trim() || !planDraft.focus.trim() || (!planEditorDayId && !planDraft.exerciseName)} onClick={savePlanEditor}>Save training day</button></section></div>}
       {profileOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setProfileOpen(false); }}><section className="modal-card profile-modal" role="dialog" aria-modal="true" aria-labelledby="profile-title"><button className="modal-close" onClick={() => setProfileOpen(false)}>×</button><span className="eyebrow">LOCAL ATHLETE</span><h2 id="profile-title">Your training profile</h2><p>This profile and its history stay on this device unless you export them.</p><div className="profile-form"><label>Name<input value={state.athlete.name} onChange={(event) => updateQuietly((draft) => { draft.athlete.name = event.target.value; })} /></label><label>Goal<select value={state.athlete.goal} onChange={(event) => updateQuietly((draft) => { draft.athlete.goal = event.target.value as Athlete["goal"]; })}><option>Strength</option><option>Muscle gain</option><option>General fitness</option><option>Endurance</option></select></label><label>Experience<select value={state.athlete.experience} onChange={(event) => updateQuietly((draft) => { draft.athlete.experience = event.target.value as Athlete["experience"]; })}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></label><label>Units<select value={state.athlete.unit} onChange={(event) => updateQuietly((draft) => { draft.athlete.unit = event.target.value as Unit; })}><option value="lb">Pounds (lb)</option><option value="kg">Kilograms (kg)</option></select></label></div><div className="data-actions"><button onClick={exportData}>Export data</button><button onClick={() => importInput.current?.click()}>Import data</button><button className="danger-text" onClick={resetDemo}>Reset demo athlete</button></div><input ref={importInput} type="file" accept="application/json" hidden onChange={importData} /><button className="primary-button wide" onClick={() => setProfileOpen(false)}>Save profile</button></section></div>}
       {customExerciseOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCustomExerciseOpen(false); }}><section className="modal-card" role="dialog" aria-modal="true" aria-labelledby="custom-title"><button className="modal-close" onClick={() => setCustomExerciseOpen(false)}>×</button><span className="eyebrow">YOUR LIBRARY</span><h2 id="custom-title">Create an exercise</h2><p>Add a movement specific to your gym or training style.</p><label>Name<input value={customExercise.name} onChange={(event) => setCustomExercise((value) => ({ ...value, name: event.target.value }))} placeholder="e.g. Belt squat" /></label><label>Muscle group<input value={customExercise.muscle} onChange={(event) => setCustomExercise((value) => ({ ...value, muscle: event.target.value }))} placeholder="e.g. Quads" /></label><label>Equipment<input value={customExercise.equipment} onChange={(event) => setCustomExercise((value) => ({ ...value, equipment: event.target.value }))} placeholder="e.g. Machine" /></label><button className="primary-button wide" onClick={addCustomExercise}>Create exercise</button></section></div>}
-      {activityOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityOpen(false); }}><aside className="activity-drawer"><div className="drawer-heading"><div><span className="eyebrow">SHARED CONTEXT</span><h2>Activity history</h2></div><button onClick={() => setActivityOpen(false)}>×</button></div><p className="drawer-intro">Every manual and agent change is visible here. GymDeck never hides what changed.</p><div className="activity-feed full">{state.activities.map((activity) => <div className="activity-item" key={activity.id}><span className={`activity-icon ${activity.source.toLowerCase()}`}>{activity.source === "Agent" ? "✦" : activity.source === "You" ? "Y" : "•"}</span><div><strong>{activity.source}</strong><p>{activity.message}</p><small>{activity.time}</small></div></div>)}</div><button className="undo-button sticky" onClick={undo} disabled={undoStack.current.length === 0}>↶ Undo last change</button></aside></div>}
+      {activityOpen && <div className="drawer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setActivityOpen(false); }}><aside className="activity-drawer"><div className="drawer-heading"><div><span className="eyebrow">SHARED CONTEXT</span><h2>Activity history</h2></div><button onClick={() => setActivityOpen(false)}>×</button></div><p className="drawer-intro">Every manual and agent change is visible here. GymDeck never hides what changed.</p><div className="activity-feed full">{state.activities.map((activity) => <div className="activity-item" key={activity.id}><span className={`activity-icon ${activity.source.toLowerCase()}`}>{activity.source === "Agent" ? "✦" : activity.source === "You" ? "Y" : "•"}</span><div><strong>{activity.source}</strong><p>{activity.message}</p><small>{activity.time}</small></div></div>)}</div><button className="undo-button sticky" onClick={undo} disabled={!canUndo}>↶ Undo last change</button></aside></div>}
     </main>
   );
 }

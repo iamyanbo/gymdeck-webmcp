@@ -30,11 +30,16 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   const tools = [
     "get_athlete_profile",
     "get_today_workout",
+    "get_training_plan",
     "search_exercises",
     "get_exercise_history",
     "create_training_plan",
     "add_workout_day",
+    "set_plan_day",
+    "edit_plan_day",
+    "load_plan_day",
     "add_cardio_block",
+    "undo_last_change",
     "add_exercise",
     "update_exercise_prescription",
     "swap_exercise",
@@ -53,4 +58,8 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   assert.match(page, /readOnlyHint: false/);
   assert.match(page, /durationMinutes/);
   assert.match(page, /Stationary Bike/);
+  assert.match(page, /schemaVersion: 2/);
+  assert.match(page, /migrateWorkspace/);
+  assert.match(page, /BASE_LIBRARY, \.\.\.customExercises/);
+  assert.match(page, /Triceps Rope Pushdown/);
 });

@@ -26,19 +26,24 @@ The agent does not guess its way through buttons or rely on a chatbot embedded i
 
 ## WebMCP tools
 
-GymDeck registers sixteen JavaScript tools from the top-level page:
+GymDeck registers twenty-one JavaScript tools from the top-level page:
 
 | Tool | Type | Purpose |
 | --- | --- | --- |
 | `get_athlete_profile` | Read | Read goals, units, experience, equipment, and schedule |
 | `get_today_workout` | Read | Read exercise order, prescriptions, completed sets, and status |
+| `get_training_plan` | Read | Read every saved day and prescription before editing the plan |
 | `search_exercises` | Read | Search by name, muscle, movement, or equipment |
 | `get_exercise_history` | Read | Read recorded performance for an exercise |
 | `get_progress_summary` | Read | Read volume, consistency, records, and recent performance |
 | `get_weekly_summary` | Read | Summarize the previous seven days |
 | `create_training_plan` | Write | Create a multi-day training plan |
 | `add_workout_day` | Write | Add a focused day such as shoulders and arms to the active plan |
+| `set_plan_day` | Write | Create or replace a day with an exact exercise list |
+| `edit_plan_day` | Write | Rename/delete a day or add, update, remove, and reorder plan exercises |
+| `load_plan_day` | Write | Load a named saved day into Today’s Workout |
 | `add_cardio_block` | Write | Add timed treadmill, bike, rower, stair-climber, or elliptical work |
+| `undo_last_change` | Write | Undo the most recent visible GymDeck change |
 | `add_exercise` | Write | Add an exercise and prescription to today’s workout |
 | `update_exercise_prescription` | Write | Change sets, reps, weight, or rest time |
 | `swap_exercise` | Write | Replace an exercise while preserving completed history |
@@ -54,7 +59,7 @@ Read tools are marked with `readOnlyHint`. Write tools describe their side effec
 - React 19 and TypeScript
 - Vinext/Vite deployment targeting Cloudflare Workers through ChatGPT Sites
 - No application server, external database, authentication, or API key
-- A versioned `localStorage` workspace under `gymdeck-workspace-v1`
+- A versioned `localStorage` workspace under `gymdeck-workspace-v1`, with automatic migration that merges newly shipped exercises and cardio machines into older saved workspaces
 - The external agent is supplied by a WebMCP-capable browser; GymDeck does not ship a fake chatbot
 
 All athlete data remains in the current browser unless the user explicitly exports it. Every judge or visitor starts with an isolated demo workspace on their own device.
@@ -73,7 +78,7 @@ Open the local URL printed by the development server. The complete manual interf
 ## Test the agent workflow
 
 1. Open the live app in ChatGPT’s in-app browser.
-2. Open **Site tools** in the address bar and confirm that GymDeck exposes sixteen tools.
+2. Open **Site tools** in the address bar and confirm that GymDeck exposes twenty-one tools.
 3. Load or reset the demo athlete if needed.
 4. Send this prompt to the browser agent:
 

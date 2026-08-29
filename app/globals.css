@@ -179,8 +179,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .plan-exercises > div > span { grid-row: 1 / span 2; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; background: #f0f1ec; color: #878b81; font-family: var(--font-geist-mono); font-size: 8px; }
 .plan-exercises strong { font-size: 10px; }
 .plan-exercises small { margin-top: 3px; color: #979a91; font-size: 8px; }
-.plan-day > button { position: relative; z-index: 1; margin-top: auto; width: 100%; border: 0; border-radius: 7px; padding: 11px; background: var(--dark); color: white; text-align: left; font-size: 9px; font-weight: 700; cursor: pointer; }
-.plan-day > button span { float: right; color: var(--lime); }
+.plan-day-actions { position: relative; z-index: 1; margin-top: auto; display: grid; grid-template-columns: .72fr 1.28fr; gap: 6px; }
+.plan-day-actions button { border: 1px solid var(--line); border-radius: 7px; padding: 11px; background: white; color: #6f7369; text-align: left; font-size: 9px; font-weight: 700; cursor: pointer; }
+.plan-day-actions button:last-child { border-color: var(--dark); background: var(--dark); color: white; }
+.plan-day-actions button span { float: right; color: var(--lime); }
 .day-watermark { position: absolute; right: -10px; bottom: -28px; font-size: 115px; font-weight: 900; line-height: 1; color: #f6f6f2; letter-spacing: -.09em; }
 .plan-note { display: flex; align-items: flex-start; gap: 14px; margin-top: 16px; padding: 18px; border-radius: 12px; background: var(--dark); color: white; }
 .plan-note > span { color: var(--lime); }
@@ -249,6 +251,17 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .data-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 0; border-top: 1px solid var(--soft-line); }
 .data-actions button { border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; background: white; color: #65695f; font-size: 8px; cursor: pointer; }
 .data-actions .danger-text { color: #a34a3c; }
+.plan-editor-modal { width: min(540px, 100%); }
+.plan-editor-list { display: grid; gap: 5px; margin: 12px 0 16px; padding: 10px; border: 1px solid var(--soft-line); border-radius: 9px; background: #fafaf7; }
+.plan-editor-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 4px; border-bottom: 1px solid var(--soft-line); }
+.plan-editor-list > div:last-child { border-bottom: 0; }
+.plan-editor-list span { display: grid; gap: 2px; }
+.plan-editor-list strong { font-size: 10px; }
+.plan-editor-list small { color: #96998f; font-size: 8px; }
+.plan-editor-list button, .danger-button { border: 1px solid #ecd8d4; border-radius: 6px; padding: 7px 9px; background: #fff8f6; color: #a34a3c; font-size: 8px; font-weight: 700; cursor: pointer; }
+.prescription-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.prescription-grid label { min-width: 0; }
+.danger-button.wide { width: 100%; }
 .drawer-backdrop { place-items: stretch; justify-items: end; padding: 0; }
 .activity-drawer { width: min(390px, 100%); height: 100%; display: flex; flex-direction: column; padding: 28px; background: white; box-shadow: -20px 0 60px rgba(0,0,0,.15); animation: drawer-enter .24s cubic-bezier(.2,.8,.3,1) both; }
 .drawer-heading { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -317,6 +330,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .history-row { min-width: 560px; }
   .rest-timer { right: 14px; bottom: 78px; }
   .profile-form { grid-template-columns: 1fr; }
+  .prescription-grid { grid-template-columns: 1fr 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
