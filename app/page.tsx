@@ -766,12 +766,12 @@ export default function Home() {
   const resetDemo = () => { if (!window.confirm("Reset GymDeck and reload the demo athlete? Your current local data will be replaced.")) return; const demo = buildDemoState(); stateRef.current = demo; undoStack.current = []; setCanUndo(false); setState(demo); setProfileOpen(false); setView("today"); };
   const acceptRecommendation = (id: string) => { const recommendation = state.recommendations.find((item) => item.id === id); if (!recommendation) return; commit(`Accepted ${recommendation.suggestedWeight} ${state.athlete.unit} for ${recommendation.exerciseName} next session.`, "You", (draft) => { const target = draft.plan.days.flatMap((day) => day.exercises).find((item) => item.name === recommendation.exerciseName); if (target) target.weight = recommendation.suggestedWeight; const stored = draft.recommendations.find((item) => item.id === id); if (stored) stored.status = "accepted"; }); };
 
-  if (!hydrated) return <main className="loading-shell"><div className="loading-mark">GD</div><p>Loading your training workspace…</p></main>;
+  if (!hydrated) return <main className="loading-shell"><div className="loading-mark"><img src="/gymdeck-mark.png" alt="GymDeck" /></div><p>Loading your training workspace…</p></main>;
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <button className="brand" onClick={() => setView("today")} aria-label="GymDeck home"><span className="brand-mark">GD</span><span><strong>GymDeck</strong><small>Train with memory</small></span></button>
+        <button className="brand" onClick={() => setView("today")} aria-label="GymDeck home"><span className="brand-mark"><img src="/gymdeck-mark.png" alt="" /></span><span><strong>GymDeck</strong><small>Train with memory</small></span></button>
         <nav className="primary-nav" aria-label="Main navigation">
           <NavButton active={view === "today"} icon="⌁" label="Today" onClick={() => setView("today")} />
           <NavButton active={view === "plan"} icon="▤" label="My plan" onClick={() => setView("plan")} />
@@ -785,7 +785,7 @@ export default function Home() {
       </aside>
       <section className="workspace">
         <header className="topbar">
-          <div className="mobile-brand"><span className="brand-mark">GD</span><strong>GymDeck</strong></div>
+          <div className="mobile-brand"><span className="brand-mark"><img src="/gymdeck-mark.png" alt="" /></span><strong>GymDeck</strong></div>
           <div className="topbar-copy"><span className="eyebrow">{formatDate(isoDate())}</span><strong>{view === "today" ? "Today’s workout" : view === "plan" ? state.plan.name : view === "progress" ? "Your progress" : "Exercise library"}</strong></div>
           <div className="topbar-actions"><span className="local-pill"><span>●</span> Saved on device</span><button className="icon-button" onClick={() => setActivityOpen(true)} aria-label="Open activity history"><span className="activity-lines" aria-hidden="true" /><span className="notification-dot" /></button><button className="avatar-button" onClick={() => setProfileOpen(true)} aria-label="Open athlete profile">{state.athlete.name.slice(0, 1).toUpperCase()}</button></div>
         </header>

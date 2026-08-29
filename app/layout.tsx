@@ -19,6 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase: new URL(origin),
     title,
     description,
+    icons: { icon: "/gymdeck-mark.png" },
     openGraph: { title, description, type: "website", images: [{ url: `${origin}/og.png`, width: 1536, height: 1024, alt: "GymDeck — Train with memory" }] },
     twitter: { card: "summary_large_image", title, description, images: [`${origin}/og.png`] },
   };
