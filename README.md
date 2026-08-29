@@ -38,7 +38,7 @@ GymDeck registers twenty-one JavaScript tools from the top-level page:
 | `get_progress_summary` | Read | Read volume, consistency, records, and recent performance |
 | `get_weekly_summary` | Read | Summarize the previous seven days |
 | `create_training_plan` | Write | Create a multi-day training plan |
-| `add_workout_day` | Write | Add a focused day such as shoulders and arms to the active plan |
+| `prepare_focused_workout` | Write | Turn a short focus request into today’s complete workout or a saved plan day |
 | `set_plan_day` | Write | Create or replace a day with an exact exercise list |
 | `edit_plan_day` | Write | Rename/delete a day or add, update, remove, and reorder plan exercises |
 | `load_plan_day` | Write | Load a named saved day into Today’s Workout |
@@ -87,7 +87,7 @@ Open the local URL printed by the development server. The complete manual interf
 5. Confirm that the workout and activity history update visibly.
 6. Log a bench-press set manually, then ask the agent to read it and recommend the next session.
 7. Accept or edit the recommendation from Progress and refresh the page to prove persistence.
-8. Ask: “Add a Shoulders & Arms day to my plan,” then: “Add 20 minutes of cardio on the Stationary Bike after today’s strength work.” Confirm both changes appear immediately in the visible plan/workout and activity history.
+8. Ask: “Make me a shoulders and arms workout for today.” Then follow with: “Add 20 minutes on the bike.” Confirm both changes appear immediately in the visible workout and activity history.
 
 Current ChatGPT documentation recommends GPT-5.6 Sol or GPT-5.6 Terra for site tools and notes that availability depends on the desktop app version and account rollout.
 

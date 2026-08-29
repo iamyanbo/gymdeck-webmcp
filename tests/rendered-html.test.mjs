@@ -34,7 +34,7 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
     "search_exercises",
     "get_exercise_history",
     "create_training_plan",
-    "add_workout_day",
+    "prepare_focused_workout",
     "set_plan_day",
     "edit_plan_day",
     "load_plan_day",
@@ -62,4 +62,6 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   assert.match(page, /migrateWorkspace/);
   assert.match(page, /BASE_LIBRARY, \.\.\.customExercises/);
   assert.match(page, /Triceps Rope Pushdown/);
+  assert.doesNotMatch(page, /Ready when you are/);
+  assert.match(page, /Site tools active/);
 });
