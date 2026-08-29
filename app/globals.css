@@ -134,6 +134,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .set-number { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 6px; background: #f0f1ec; color: #6e7168; font-family: var(--font-geist-mono); font-size: 9px; }
 .set-row input, .set-row select { width: 100%; height: 36px; border: 1px solid #e0e2db; border-radius: 8px; background-color: #f8f9f5; padding: 0 10px; color: var(--ink); font-size: 11px; font-weight: 650; font-variant-numeric: tabular-nums; box-shadow: inset 0 1px 0 rgba(255,255,255,.7); }
 .set-row input:hover, .set-row select:hover { border-color: #c8cbc1; background-color: white; }
+.set-note { grid-column: 2 / 5; margin-top: -1px; }
+.set-row .set-note input { height: 30px; color: #696d63; font-size: 9px; font-weight: 500; }
+.set-row .complete-set { grid-column: 5; grid-row: 1; }
 .complete-set { width: 29px; height: 29px; margin: auto; border: 1px solid #cfd1c8; border-radius: 7px; background: white; color: var(--dark); cursor: pointer; }
 .set-row.done .complete-set { border-color: var(--lime-deep); background: var(--lime); font-weight: 900; }
 .exercise-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; color: #8a8d83; font-size: 9px; }
@@ -209,7 +212,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .recommendation strong { font-size: 10px; }
 .recommendation p { margin: 5px 0 0; color: #777b70; font-size: 8px; line-height: 1.45; }
 .recommendation-action { display: flex; align-items: center; justify-content: space-between; font-size: 9px; }
+.recommendation-action > span { display: flex; align-items: center; gap: 5px; }
+.recommendation-action label { display: inline-flex; }
+.recommendation-action input { width: 62px; height: 30px; border: 1px solid #d8dbd0; border-radius: 6px; padding: 0 7px; background: white; color: var(--ink); font-size: 9px; font-weight: 750; }
+.recommendation-action > div { display: flex; gap: 5px; }
 .recommendation-action button { border: 0; border-radius: 5px; padding: 6px 9px; background: var(--dark); color: white; font-size: 8px; cursor: pointer; }
+.recommendation-action .secondary-action { border: 1px solid #d8dbd0; background: white; color: #6f7368; }
 .recommendation-action em { color: var(--green); font-style: normal; font-size: 8px; text-transform: uppercase; }
 .history-card { margin-top: 14px; }
 .history-table { margin-top: 14px; overflow-x: auto; }

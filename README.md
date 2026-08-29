@@ -29,7 +29,7 @@ Today’s workout works like a checklist: complete each set, mark it done, and m
 
 ## WebMCP tools
 
-GymDeck exposes twenty-one tools. Read tools inspect the current workspace; write tools update it and return a concise result describing the change.
+GymDeck exposes twenty-three tools. Read tools inspect the current workspace; write tools update it and return a concise result describing the change.
 
 | Tool | What it does |
 | --- | --- |
@@ -41,6 +41,7 @@ GymDeck exposes twenty-one tools. Read tools inspect the current workspace; writ
 | `get_progress_summary` | Read volume, consistency, records, and recent performance |
 | `get_weekly_summary` | Summarize the previous seven days |
 | `create_training_plan` | Create a multi-day plan |
+| `replace_training_plan` | Replace an existing plan only when the user explicitly requests it |
 | `prepare_focused_workout` | Turn a short focus request into today’s workout or a saved plan day |
 | `set_plan_day` | Create or replace a saved day with an exact exercise list |
 | `edit_plan_day` | Rename, delete, add, update, remove, or reorder plan exercises |
@@ -54,11 +55,12 @@ GymDeck exposes twenty-one tools. Read tools inspect the current workspace; writ
 | `edit_set` | Correct a logged set |
 | `adjust_current_workout` | Shorten, skip, add a set, or reorder the current workout |
 | `recommend_next_session` | Save an explainable progression suggestion |
+| `apply_progression_to_plan` | Apply accepted history-based weight changes to the saved weekly plan |
 
 ## Try the agent workflow
 
 1. Open the live app in ChatGPT’s in-app browser.
-2. Open **Site tools** in the address bar and confirm that GymDeck exposes twenty-one tools.
+2. Open **Site tools** in the address bar and confirm that GymDeck exposes twenty-three tools.
 3. Reset or load the demo athlete if needed.
 4. Ask the agent:
 
@@ -70,7 +72,8 @@ GymDeck exposes twenty-one tools. Read tools inspect the current workspace; writ
 
 6. Check that both changes appear in Today’s Workout and Activity History.
 7. Log a set manually, ask the agent to read the new history, and request a next-session recommendation.
-8. Refresh the page and confirm that the workout and history are still there.
+8. Ask it to apply the recommendation to the saved plan, then confirm the plan’s next-session weight changed.
+9. Refresh the page and confirm that the workout, history, and updated plan are still there.
 
 ## How it works
 

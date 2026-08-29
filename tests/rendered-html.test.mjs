@@ -34,6 +34,7 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
     "search_exercises",
     "get_exercise_history",
     "create_training_plan",
+    "replace_training_plan",
     "prepare_focused_workout",
     "set_plan_day",
     "edit_plan_day",
@@ -48,6 +49,7 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
     "adjust_current_workout",
     "get_progress_summary",
     "recommend_next_session",
+    "apply_progression_to_plan",
     "get_weekly_summary",
   ];
   for (const tool of tools) {
@@ -64,4 +66,6 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   assert.match(page, /Triceps Rope Pushdown/);
   assert.doesNotMatch(page, /Ready when you are/);
   assert.match(page, /Site tools active/);
+  assert.match(page, /23 actions available/);
+  assert.match(page, /syncCompletedSetHistory/);
 });

@@ -2,6 +2,7 @@
 "use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { applyPendingRecommendations, buildProgressRecommendations, syncCompletedSetHistory } from "./workout-domain";
 
 type View = "today" | "plan" | "progress" | "library";
 type Unit = "lb" | "kg";
@@ -97,6 +98,9 @@ type HistoryEntry = {
   sets: number;
   volume: number;
   durationMinutes?: number;
+  setId?: string;
+  effort?: number;
+  note?: string;
 };
 
 type Recommendation = {
@@ -379,23 +383,6 @@ function completedSetCount(workout: Workout) { return workout.exercises.reduce((
 function totalSetCount(workout: Workout) { return workout.exercises.reduce((total, exercise) => total + exercise.sets.length, 0); }
 function totalVolume(history: HistoryEntry[]) { return history.reduce((total, item) => total + item.volume, 0); }
 
-function buildRecommendations(state: AppState): Recommendation[] {
-  return state.currentWorkout.exercises.filter((exercise) => !exercise.durationMinutes && !exercise.skipped && exercise.sets.some((set) => set.completed)).map((exercise) => {
-    const completed = exercise.sets.filter((set) => set.completed);
-    const allTargetsHit = completed.length === exercise.sets.length && completed.every((set) => set.actualReps >= set.targetReps);
-    const averageEffort = completed.reduce((sum, set) => sum + set.effort, 0) / completed.length;
-    const currentWeight = Math.max(...completed.map((set) => set.weight));
-    const isLowerCompound = /squat|deadlift|leg press|hip thrust/i.test(exercise.name);
-    const increment = state.athlete.unit === "kg" ? (isLowerCompound ? 5 : 2.5) : (isLowerCompound ? 10 : 5);
-    return {
-      id: uid("rec"), exerciseName: exercise.name, currentWeight,
-      suggestedWeight: allTargetsHit && averageEffort <= 8 ? currentWeight + increment : currentWeight,
-      reason: allTargetsHit && averageEffort <= 8 ? `All prescribed reps were completed at an average effort of ${averageEffort.toFixed(1)}/10.` : "Keep the current load until every prescribed rep is completed consistently.",
-      status: "pending" as const,
-    };
-  });
-}
-
 export default function Home() {
   const [state, setState] = useState<AppState>(() => {
     if (typeof window === "undefined") return buildDemoState();
@@ -486,9 +473,9 @@ export default function Home() {
       if (targetSet.completed) {
         draft.currentWorkout.status = "active";
         draft.currentWorkout.startedAt ||= new Date().toISOString();
-        draft.history.push({ id: uid("history"), date: draft.currentWorkout.date, exerciseId: target.libraryId, exerciseName: target.name, weight: targetSet.weight, reps: targetSet.actualReps, sets: 1, volume: targetSet.weight * targetSet.actualReps, durationMinutes: target.durationMinutes });
+        draft.history.push({ id: uid("history"), date: draft.currentWorkout.date, exerciseId: target.libraryId, exerciseName: target.name, weight: targetSet.weight, reps: targetSet.actualReps, sets: 1, volume: targetSet.weight * targetSet.actualReps, durationMinutes: target.durationMinutes, setId: targetSet.id, effort: targetSet.effort, note: targetSet.note });
       } else {
-        const historyIndex = [...draft.history].reverse().findIndex((entry) => entry.date === draft.currentWorkout.date && entry.exerciseName === target.name && entry.weight === targetSet.weight && entry.reps === targetSet.actualReps);
+        const historyIndex = [...draft.history].reverse().findIndex((entry) => entry.setId === targetSet.id || (!entry.setId && entry.date === draft.currentWorkout.date && entry.exerciseName === target.name && entry.weight === targetSet.weight && entry.reps === targetSet.actualReps));
         if (historyIndex >= 0) draft.history.splice(draft.history.length - 1 - historyIndex, 1);
       }
     });
@@ -522,6 +509,7 @@ export default function Home() {
     const missing = resolved.filter((item) => !item.definition).map((item) => item.input.exerciseName);
     if (missing.length) return `Could not update the plan because these exercises are not in the library: ${missing.join(", ")}. Use search_exercises or add_exercise first.`;
     const existing = mode === "replace" ? current.plan.days.find((day) => normalizeName(day.label) === normalizeName(requestedLabel ?? "") || normalizeName(day.focus) === normalizeName(focus)) : undefined;
+    if (mode === "replace" && !existing) return `Could not replace a plan day because no day matched ${requestedLabel?.trim() || focus}. Use get_training_plan first, then pass the exact day label or focus.`;
     const label = requestedLabel?.trim() || existing?.label || `Day ${current.plan.days.length + 1}`;
     const prescriptions: Prescription[] = resolved.map(({ input, definition }) => ({
       id: uid("prescription"),
@@ -610,7 +598,7 @@ export default function Home() {
     const minutes = Math.round(Number(durationMinutes));
     if (!definition || !Number.isFinite(minutes) || minutes < 5 || minutes > 180) return "Choose treadmill, bike, rowing machine, stair climber, or elliptical and a duration from 5 to 180 minutes.";
     let targetDay = destination === "plan" ? stateRef.current.plan.days.at(-1) : undefined;
-    if (destination === "plan" && planDay) { const query = normalizeName(planDay); targetDay = stateRef.current.plan.days.find((day) => normalizeName(day.label) === query || normalizeName(day.focus) === query) ?? targetDay; }
+    if (destination === "plan" && planDay) { const query = normalizeName(planDay); targetDay = stateRef.current.plan.days.find((day) => normalizeName(day.label) === query || normalizeName(day.focus) === query); if (!targetDay) return `Plan day not found: ${planDay}. No cardio was added.`; }
     if (destination === "plan" && !targetDay) return "No plan day is available for the cardio block.";
     commit(`${source === "Agent" ? "Agent" : "You"} added ${minutes} min of ${definition.name} cardio ${destination === "plan" ? `to ${targetDay!.label}` : "after today’s strength work"}.`, source, (draft) => {
       if (destination === "plan") draft.plan.days.find((day) => day.id === targetDay!.id)!.exercises.push({ id: uid("prescription"), libraryId: definition.id, name: definition.name, sets: 1, reps: 0, weight: 0, restSeconds: 0, durationMinutes: minutes });
@@ -682,6 +670,7 @@ export default function Home() {
         const existing = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(currentExercise));
         const replacement = findExercise(stateRef.current.library, String(replacementExercise));
         if (!existing || !replacement) return "Could not find the current or replacement exercise. Use get_today_workout and search_exercises first.";
+        if (replacement.category === "cardio") return "A strength exercise cannot be swapped for timed cardio. Use add_cardio_block instead.";
         swapExercise(existing.id, replacement.id, String(reason), "Agent");
         return `Replaced ${existing.name} with ${replacement.name}. Completed sets were preserved.`;
       } },
@@ -689,6 +678,10 @@ export default function Home() {
         const exercise = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName));
         const index = Number(setNumber) - 1;
         if (!exercise || !exercise.sets[index]) return "Exercise or set not found in today’s workout.";
+        if (exercise.sets[index].completed) {
+          commit(`Agent updated the already-completed set ${Number(setNumber)} of ${exercise.name}.`, "Agent", (draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; set.actualReps = Number(reps); set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); syncCompletedSetHistory(draft, exercise.id, index); });
+          return `Set ${Number(setNumber)} of ${exercise.name} was already complete, so its logged values were updated without reopening it.`;
+        }
         updateQuietly((draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; set.actualReps = Number(reps); set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); });
         logSetById(exercise.id, index, "Agent");
         return `Logged set ${Number(setNumber)} of ${exercise.name}: ${Number(reps)} reps at ${Number(weight)} ${stateRef.current.athlete.unit}.`;
@@ -697,11 +690,15 @@ export default function Home() {
         const exercise = findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName));
         const index = Number(setNumber) - 1;
         if (!exercise || !exercise.sets[index]) return "Exercise or set not found in today’s workout.";
-        commit(`Agent edited set ${Number(setNumber)} of ${exercise.name}.`, "Agent", (draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; if (reps !== undefined) set.actualReps = Number(reps); if (weight !== undefined) set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); if (note !== undefined) set.note = String(note); });
+        commit(`Agent edited set ${Number(setNumber)} of ${exercise.name}.`, "Agent", (draft) => { const set = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.sets[index]; if (reps !== undefined) set.actualReps = Number(reps); if (weight !== undefined) set.weight = Number(weight); if (effort !== undefined) set.effort = Number(effort); if (note !== undefined) set.note = String(note); syncCompletedSetHistory(draft, exercise.id, index); });
         return `Updated set ${Number(setNumber)} of ${exercise.name}.`;
       } },
       { name: "adjust_current_workout", title: "Adjust current workout", description: "Adapt today’s remaining workout by shortening it, skipping an exercise, adding a set, or moving an exercise in the order.", inputSchema: objectSchema({ action: { type: "string", enum: ["shorten", "skip", "add_set", "move"] }, exerciseName: { type: "string" }, targetMinutes: { type: "integer", minimum: 5, maximum: 180 }, position: { type: "integer", minimum: 1 }, reason: { type: "string" } }, ["action"]), annotations: write, execute: async ({ action, exerciseName, targetMinutes, position, reason }) => {
         const actionName = String(action);
+        const requiresExercise = actionName === "skip" || actionName === "add_set" || actionName === "move";
+        const selectedExercise = requiresExercise ? findWorkoutExercise(stateRef.current.currentWorkout.exercises, String(exerciseName ?? "")) : undefined;
+        if (requiresExercise && !selectedExercise) return `Could not ${actionName.replace("_", " ")} because the exercise was not found in today’s workout. Use get_today_workout first.`;
+        if (actionName === "move" && position === undefined) return "position is required when moving an exercise.";
         commit(`Agent adjusted today’s workout: ${actionName.replace("_", " ")}${reason ? ` — ${String(reason)}` : ""}.`, "Agent", (draft) => {
           const exercise = findWorkoutExercise(draft.currentWorkout.exercises, String(exerciseName ?? ""));
           if (actionName === "skip" && exercise) exercise.skipped = true;
@@ -714,12 +711,25 @@ export default function Home() {
       { name: "get_progress_summary", title: "Get progress summary", description: "Read overall training volume, workout completion, current personal records, consistency, and recent performance.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => {
         const current = stateRef.current;
         const prs = Object.values(current.history.filter((entry) => !entry.durationMinutes).reduce<Record<string, HistoryEntry>>((acc, entry) => { if (!acc[entry.exerciseName] || entry.weight > acc[entry.exerciseName].weight) acc[entry.exerciseName] = entry; return acc; }, {}));
-        return JSON.stringify({ totalVolume: totalVolume(current.history), cardioMinutes: current.history.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0), unit: current.athlete.unit, loggedSets: current.history.reduce((sum, item) => sum + item.sets, 0), trainingDays: new Set(current.history.map((item) => item.date)).size, personalRecords: prs });
+        const recent = current.history.filter((entry) => entry.date >= isoDate(-6));
+        const recentDays = new Set(recent.map((entry) => entry.date)).size;
+        return JSON.stringify({ totalVolume: totalVolume(current.history), cardioMinutes: current.history.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0), unit: current.athlete.unit, loggedSets: current.history.reduce((sum, item) => sum + item.sets, 0), trainingDays: new Set(current.history.map((item) => item.date)).size, weeklyConsistency: { completedDays: recentDays, plannedDays: current.athlete.weeklyDays, percent: Math.min(100, Math.round((recentDays / Math.max(1, current.athlete.weeklyDays)) * 100)) }, personalRecords: prs, recentPerformance: recent.slice(-12) });
       } },
       { name: "recommend_next_session", title: "Recommend next session", description: "Calculate and save transparent load recommendations from the completed sets in today’s workout.", inputSchema: objectSchema({}), annotations: write, execute: async () => {
-        const recommendations = buildRecommendations(stateRef.current);
+        const hasCompletedSets = stateRef.current.currentWorkout.exercises.some((exercise) => exercise.sets.some((set) => set.completed));
+        const recommendations = buildProgressRecommendations(stateRef.current, hasCompletedSets ? "current" : "plan", () => uid("rec"));
         commit("Agent reviewed today’s performance and prepared next-session recommendations.", "Agent", (draft) => { draft.recommendations = recommendations; });
         return recommendations.length ? JSON.stringify(recommendations) : "Complete at least one set before requesting recommendations.";
+      } },
+      { name: "apply_progression_to_plan", title: "Apply progression to saved plan", description: "Apply pending history-based progression recommendations to matching exercises in the saved weekly plan. Use after recommend_next_session when the user asks to update their routine. An optional exercise name limits the change; an optional weight lets the user edit one suggestion before applying it.", inputSchema: objectSchema({ exerciseName: { type: "string" }, weight: { type: "number", minimum: 0 } }), annotations: write, execute: async ({ exerciseName, weight }) => {
+        const requested = exerciseName === undefined ? undefined : String(exerciseName);
+        const pending = stateRef.current.recommendations.filter((recommendation) => recommendation.status === "pending" && (!requested || normalizeName(recommendation.exerciseName) === normalizeName(requested)));
+        if (!pending.length) return "No matching pending recommendation could be applied. Run recommend_next_session first and confirm the exercise exists in the saved plan.";
+        const planExerciseNames = stateRef.current.plan.days.flatMap((day) => day.exercises).map((exercise) => normalizeName(exercise.name));
+        if (!pending.some((recommendation) => planExerciseNames.includes(normalizeName(recommendation.exerciseName)))) return "The pending recommendation does not match an exercise in the saved plan, so no weights were changed.";
+        let updates: ReturnType<typeof applyPendingRecommendations> = [];
+        commit("Agent applied progression recommendations to the saved training plan.", "Agent", (draft) => { updates = applyPendingRecommendations(draft, requested, weight === undefined ? undefined : Number(weight)); });
+        return updates.length ? JSON.stringify(updates) : "The recommendation did not match an exercise in the saved plan, so no weights were changed.";
       } },
       { name: "get_weekly_summary", title: "Get weekly summary", description: "Summarize the athlete’s last seven days of training, volume, exercises, and notable progress.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => {
         const cutoff = isoDate(-7); const entries = stateRef.current.history.filter((entry) => entry.date >= cutoff);
@@ -736,6 +746,9 @@ export default function Home() {
   const completion = allSets ? Math.round((completedSets / allSets) * 100) : 0;
   const benchHistory = useMemo(() => state.history.filter((entry) => entry.exerciseId === "bench-press").reduce<HistoryEntry[]>((points, entry) => { const existing = points.find((point) => point.date === entry.date); if (!existing) points.push(entry); else if (entry.weight > existing.weight) Object.assign(existing, entry); return points; }, []).slice(-7), [state.history]);
   const maxBench = Math.max(1, ...benchHistory.map((entry) => entry.weight));
+  const benchPr = Math.max(0, ...benchHistory.map((entry) => entry.weight));
+  const weeklyTrainingDays = new Set(state.history.filter((entry) => entry.date >= isoDate(-6)).map((entry) => entry.date)).size;
+  const weeklyConsistency = Math.min(100, Math.round((weeklyTrainingDays / Math.max(1, state.athlete.weeklyDays)) * 100));
   const filteredLibrary = state.library.filter((exercise) => [exercise.name, exercise.muscle, exercise.equipment, exercise.movement].some((value) => value.toLowerCase().includes(libraryQuery.toLowerCase())));
 
   const openSwap = (exercise: WorkoutExercise) => {
@@ -748,13 +761,14 @@ export default function Home() {
     const set = draft.currentWorkout.exercises.find((item) => item.id === exerciseId)?.sets[setIndex];
     if (!set) return;
     if (field === "note") set.note = String(value); else set[field] = Number(value);
+    syncCompletedSetHistory(draft, exerciseId, setIndex);
   });
 
   const startOrPauseWorkout = () => {
     const nextStatus: WorkoutStatus = currentWorkout.status === "active" ? "paused" : "active";
     commit(nextStatus === "paused" ? "Paused today’s workout." : "Started today’s workout.", "You", (draft) => { draft.currentWorkout.status = nextStatus; draft.currentWorkout.startedAt ||= new Date().toISOString(); });
   };
-  const finishWorkout = () => { const recs = buildRecommendations(stateRef.current); commit(`Finished ${currentWorkout.name} with ${completedSets} logged sets.`, "You", (draft) => { draft.currentWorkout.status = "completed"; draft.recommendations = recs; }); setView("progress"); };
+  const finishWorkout = () => { const recs = buildProgressRecommendations(stateRef.current, "current", () => uid("rec")); commit(`Finished ${currentWorkout.name} with ${completedSets} logged sets.`, "You", (draft) => { draft.currentWorkout.status = "completed"; draft.recommendations = recs; }); setView("progress"); };
   const startPlanDay = (day: PlanDay) => { loadPlanDay(day.label, "You"); setView("today"); };
   const openPlanEditor = (day?: PlanDay) => { setPlanEditorDayId(day?.id ?? null); setPlanDraft({ label: day?.label ?? `Day ${stateRef.current.plan.days.length + 1}`, focus: day?.focus ?? "", exerciseName: "", sets: 3, reps: 10, weight: 0, restSeconds: 75 }); };
   const savePlanEditor = () => {
@@ -779,12 +793,13 @@ export default function Home() {
   const exportData = () => { const blob = new Blob([JSON.stringify(stateRef.current, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `gymdeck-${isoDate()}.json`; anchor.click(); URL.revokeObjectURL(url); };
   const importData = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]; if (!file) return;
-    try { const parsed = migrateWorkspace(JSON.parse(await file.text())); parsed.activities.unshift({ id: uid("activity"), source: "System", message: "Imported and upgraded a GymDeck workspace.", time: currentTime() }); stateRef.current = parsed; setState(parsed); } catch { window.alert("That file is not a valid GymDeck export."); }
+    try { const parsed = migrateWorkspace(JSON.parse(await file.text())); parsed.activities.unshift({ id: uid("activity"), source: "System", message: "Imported and upgraded a GymDeck workspace.", time: currentTime() }); stateRef.current = parsed; undoStack.current = []; setCanUndo(false); setState(parsed); } catch { window.alert("That file is not a valid GymDeck export."); }
     event.target.value = "";
   };
   const resetDemo = () => { if (!window.confirm("Reset GymDeck and reload the demo athlete? Your current local data will be replaced.")) return; const demo = buildDemoState(); stateRef.current = demo; undoStack.current = []; setCanUndo(false); setState(demo); setProfileOpen(false); setView("today"); };
   const startFresh = () => { if (!window.confirm("Start a fresh GymDeck workspace? Your current local plan, history, and changes will be cleared.")) return; const fresh = buildFreshState(); stateRef.current = fresh; undoStack.current = []; setCanUndo(false); setState(fresh); setProfileOpen(false); setView("today"); };
-  const acceptRecommendation = (id: string) => { const recommendation = state.recommendations.find((item) => item.id === id); if (!recommendation) return; commit(`Accepted ${recommendation.suggestedWeight} ${state.athlete.unit} for ${recommendation.exerciseName} next session.`, "You", (draft) => { const target = draft.plan.days.flatMap((day) => day.exercises).find((item) => item.name === recommendation.exerciseName); if (target) target.weight = recommendation.suggestedWeight; const stored = draft.recommendations.find((item) => item.id === id); if (stored) stored.status = "accepted"; }); };
+  const acceptRecommendation = (id: string) => { const recommendation = state.recommendations.find((item) => item.id === id); if (!recommendation) return; commit(`Accepted ${recommendation.suggestedWeight} ${state.athlete.unit} for ${recommendation.exerciseName} next session.`, "You", (draft) => { applyPendingRecommendations(draft, recommendation.exerciseName, recommendation.suggestedWeight); }); };
+  const ignoreRecommendation = (id: string) => { const recommendation = state.recommendations.find((item) => item.id === id); if (!recommendation) return; commit(`Ignored the progression suggestion for ${recommendation.exerciseName}.`, "You", (draft) => { const stored = draft.recommendations.find((item) => item.id === id); if (stored) stored.status = "ignored"; }); };
 
   if (!hydrated) return <main className="loading-shell"><div className="loading-mark"><img src="/gymdeck-mark.png" alt="GymDeck" /></div><p>Loading your training workspace…</p></main>;
 
@@ -799,7 +814,7 @@ export default function Home() {
           <NavButton active={view === "library"} icon="＋" label="Exercises" onClick={() => setView("library")} />
         </nav>
         <div className="sidebar-bottom">
-          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Site tools active" : webMcpStatus === "registering" ? "Activating tools" : "Standard browser"}</strong><small>{webMcpStatus === "ready" ? "22 actions available" : "Workout tracking is available"}</small></div></div>
+          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Site tools active" : webMcpStatus === "registering" ? "Activating tools" : "Standard browser"}</strong><small>{webMcpStatus === "ready" ? "23 actions available" : "Workout tracking is available"}</small></div></div>
           <button className="profile-card" onClick={() => setProfileOpen(true)}><span className="avatar">{state.athlete.name.slice(0, 1).toUpperCase()}</span><span><strong>{state.athlete.name}</strong><small>{state.athlete.goal} · {state.athlete.experience}</small></span><span className="chevron">›</span></button>
         </div>
       </aside>
@@ -824,7 +839,7 @@ export default function Home() {
                   <button className="exercise-summary" onClick={() => setExpandedExercise(expanded ? "" : exercise.id)}><span className="exercise-order">{String(exerciseIndex + 1).padStart(2, "0")}</span><span className="exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.equipment}{exercise.swapReason ? ` · Swapped: ${exercise.swapReason}` : ""}</small></span><span className="set-count">{exercise.durationMinutes ? `${exercise.durationMinutes} min` : `${complete}/${exercise.sets.length} sets`}</span><span className={`expand-icon ${expanded ? "open" : ""}`} aria-hidden="true" /></button>
                   {expanded && <div className="exercise-detail">
                     {exercise.durationMinutes ? <div className="cardio-detail"><span className="eyebrow">CARDIO BLOCK</span><strong>{exercise.durationMinutes} minutes on the {exercise.name}</strong><p>Log it when you finish. Your duration stays in the workout history without being treated as reps or weight.</p><div><label>Effort<select value={exercise.sets[0]?.effort ?? 7} onChange={(event) => updateSet(exercise.id, 0, "effort", event.target.value)}>{[5,6,7,8,9,10].map((value) => <option key={value} value={value}>{value}/10</option>)}</select></label><button className="primary-button" onClick={() => logSetById(exercise.id, 0)}>{exercise.sets[0]?.completed ? "✓ Completed" : "Complete cardio"}</button></div></div> : <><div className="set-table-header"><span>SET</span><span>WEIGHT ({state.athlete.unit.toUpperCase()})</span><span>REPS</span><span>EFFORT</span><span>DONE</span></div>
-                    {exercise.sets.map((set, setIndex) => <div className={`set-row ${set.completed ? "done" : ""}`} key={set.id}><span className="set-number">{setIndex + 1}</span><label><span className="sr-only">Weight for set {setIndex + 1}</span><input type="number" min="0" value={set.weight} onChange={(event) => updateSet(exercise.id, setIndex, "weight", event.target.value)} /></label><label><span className="sr-only">Reps for set {setIndex + 1}</span><input type="number" min="0" value={set.actualReps} onChange={(event) => updateSet(exercise.id, setIndex, "actualReps", event.target.value)} /></label><label><span className="sr-only">Effort for set {setIndex + 1}</span><select value={set.effort} onChange={(event) => updateSet(exercise.id, setIndex, "effort", event.target.value)}>{[5,6,7,8,9,10].map((value) => <option key={value} value={value}>{value}/10</option>)}</select></label><button className="complete-set" onClick={() => logSetById(exercise.id, setIndex)} aria-label={`${set.completed ? "Reopen" : "Complete"} set ${setIndex + 1}`}>{set.completed ? "✓" : ""}</button></div>)}
+                    {exercise.sets.map((set, setIndex) => <div className={`set-row ${set.completed ? "done" : ""}`} key={set.id}><span className="set-number">{setIndex + 1}</span><label><span className="sr-only">Weight for set {setIndex + 1}</span><input type="number" min="0" value={set.weight} onChange={(event) => updateSet(exercise.id, setIndex, "weight", event.target.value)} /></label><label><span className="sr-only">Reps for set {setIndex + 1}</span><input type="number" min="0" value={set.actualReps} onChange={(event) => updateSet(exercise.id, setIndex, "actualReps", event.target.value)} /></label><label><span className="sr-only">Effort for set {setIndex + 1}</span><select value={set.effort} onChange={(event) => updateSet(exercise.id, setIndex, "effort", event.target.value)}>{[5,6,7,8,9,10].map((value) => <option key={value} value={value}>{value}/10</option>)}</select></label><button className="complete-set" onClick={() => logSetById(exercise.id, setIndex)} aria-label={`${set.completed ? "Reopen" : "Complete"} set ${setIndex + 1}`}>{set.completed ? "✓" : ""}</button><label className="set-note"><span className="sr-only">Note for set {setIndex + 1}</span><input value={set.note} onChange={(event) => updateSet(exercise.id, setIndex, "note", event.target.value)} placeholder="Optional set note" /></label></div>)}
                     <div className="exercise-footer"><span>Rest {Math.floor(exercise.restSeconds / 60)}:{String(exercise.restSeconds % 60).padStart(2, "0")}</span><div><button onClick={() => openSwap(exercise)}>↻ Swap</button><button onClick={() => commit(`Added one set to ${exercise.name}.`, "You", (draft) => { const target = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!; const base = target.sets.at(-1)!; target.sets.push({ ...base, id: uid("set"), completed: false }); })}>＋ Set</button><button onClick={() => commit(`Skipped ${exercise.name} for today.`, "You", (draft) => { draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.skipped = true; })}>Skip</button></div></div></>}
                   </div>}
                 </article>;
@@ -842,9 +857,9 @@ export default function Home() {
         </div>}
         {view === "progress" && <div className="page-content single-page">
           <div className="page-hero-row"><div><span className="eyebrow">TRAINING MEMORY</span><h1>Progress you can act on</h1><p>Every completed set becomes context for your next session.</p></div><button className="secondary-button" onClick={() => setView("today")}>Back to workout</button></div>
-          <div className="metric-grid"><Metric label="Total volume" value={`${Math.round(totalVolume(state.history) / 1000)}k`} detail={`${state.athlete.unit} moved`} /><Metric label="Cardio time" value={`${state.history.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0)} min`} detail="Logged conditioning" /><Metric label="Training days" value={String(new Set(state.history.map((item) => item.date)).size)} detail="Current workspace" /><Metric label="Bench trend" value={`+${Math.max(0, (benchHistory.at(-1)?.weight ?? 0) - (benchHistory[0]?.weight ?? 0))}`} detail={`${state.athlete.unit} in 5 weeks`} /></div>
+          <div className="metric-grid"><Metric label="Total volume" value={`${Math.round(totalVolume(state.history) / 1000)}k`} detail={`${state.athlete.unit} moved`} /><Metric label="Weekly consistency" value={`${weeklyConsistency}%`} detail={`${weeklyTrainingDays} of ${state.athlete.weeklyDays} planned days`} /><Metric label="Training days" value={String(new Set(state.history.map((item) => item.date)).size)} detail="Current workspace" /><Metric label="Bench press PR" value={`${benchPr}`} detail={`${state.athlete.unit} best recorded load`} /></div>
           <div className="progress-grid"><section className="chart-card"><div className="chart-heading"><div><span className="eyebrow">STRENGTH TREND</span><h2>Barbell Bench Press</h2></div><span className="trend-pill">↗ Moving up</span></div><div className="bar-chart" aria-label="Bench press weight history">{benchHistory.map((entry) => <div className="bar-column" key={`${entry.id}-${entry.date}`}><span className="bar-value">{entry.weight}</span><div className="bar" style={{ height: `${Math.max(20, (entry.weight / maxBench) * 100)}%` }} /><small>{shortDate(entry.date)}</small></div>)}</div></section>
-          <section className="recommendation-card"><span className="eyebrow">NEXT SESSION</span><h2>Progression suggestions</h2><div className="recommendation-list">{state.recommendations.length ? state.recommendations.map((rec) => <div className={`recommendation ${rec.status}`} key={rec.id}><div><strong>{rec.exerciseName}</strong><p>{rec.reason}</p></div><div className="recommendation-action"><span>{rec.currentWeight} → <strong>{rec.suggestedWeight} {state.athlete.unit}</strong></span>{rec.status === "pending" ? <button onClick={() => acceptRecommendation(rec.id)}>Accept</button> : <em>{rec.status}</em>}</div></div>) : <p className="empty-copy">Complete a few sets to unlock recommendations.</p>}</div></section></div>
+          <section className="recommendation-card"><span className="eyebrow">NEXT SESSION</span><h2>Progression suggestions</h2><div className="recommendation-list">{state.recommendations.length ? state.recommendations.map((rec) => <div className={`recommendation ${rec.status}`} key={rec.id}><div><strong>{rec.exerciseName}</strong><p>{rec.reason}</p></div><div className="recommendation-action"><span>{rec.currentWeight} → <label><span className="sr-only">Suggested weight for {rec.exerciseName}</span><input type="number" min="0" value={rec.suggestedWeight} disabled={rec.status !== "pending"} onChange={(event) => updateQuietly((draft) => { const target = draft.recommendations.find((item) => item.id === rec.id); if (target) target.suggestedWeight = Math.max(0, Number(event.target.value)); })} /></label><strong>{state.athlete.unit}</strong></span>{rec.status === "pending" ? <div><button onClick={() => acceptRecommendation(rec.id)}>Accept</button><button className="secondary-action" onClick={() => ignoreRecommendation(rec.id)}>Ignore</button></div> : <em>{rec.status}</em>}</div></div>) : <p className="empty-copy">Complete a few sets to unlock recommendations.</p>}</div></section></div>
           <section className="history-card"><div className="chart-heading"><div><span className="eyebrow">RECENT WORK</span><h2>Training log</h2></div><button className="text-button" onClick={exportData}>Export data</button></div><div className="history-table"><div className="history-row header"><span>Date</span><span>Exercise</span><span>Load</span><span>Output</span><span>Total</span></div>{[...state.history].reverse().slice(0, 8).map((entry) => <div className="history-row" key={entry.id}><span>{shortDate(entry.date)}</span><strong>{entry.exerciseName}</strong><span>{entry.durationMinutes ? "—" : `${entry.weight} ${state.athlete.unit}`}</span><span>{entry.durationMinutes ? `${entry.durationMinutes} min` : entry.reps}</span><span>{entry.durationMinutes ? "Cardio" : entry.volume.toLocaleString()}</span></div>)}</div></section>
         </div>}
         {view === "library" && <div className="page-content single-page">
