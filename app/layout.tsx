@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "GymDeck — Train with memory";
-  const description = "A private, agent-ready workout workspace that tracks every set and turns progress into the next move.";
+  const description = "A local-first, agent-ready workout workspace that tracks every set and turns progress into the next move.";
   return {
     metadataBase: new URL(origin),
     title,

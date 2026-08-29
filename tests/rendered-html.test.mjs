@@ -27,7 +27,26 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   assert.match(page, /document as unknown as \{ modelContext\?: ModelContext \}/);
   assert.match(page, /gymdeck-workspace-v1/);
-  for (const tool of ["get_today_workout", "get_exercise_history", "swap_exercise", "log_set", "adjust_current_workout", "recommend_next_session"]) {
+  const tools = [
+    "get_athlete_profile",
+    "get_today_workout",
+    "search_exercises",
+    "get_exercise_history",
+    "create_training_plan",
+    "add_exercise",
+    "update_exercise_prescription",
+    "swap_exercise",
+    "log_set",
+    "edit_set",
+    "adjust_current_workout",
+    "get_progress_summary",
+    "recommend_next_session",
+    "get_weekly_summary",
+  ];
+  for (const tool of tools) {
     assert.match(page, new RegExp(`name: "${tool}"`));
   }
+  assert.match(page, /modelContext\.registerTool\(tool/);
+  assert.match(page, /readOnlyHint: true/);
+  assert.match(page, /readOnlyHint: false/);
 });
