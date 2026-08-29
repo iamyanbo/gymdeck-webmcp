@@ -28,6 +28,10 @@ The normal UI and the WebMCP tools use the same state-management functions. That
 - Versioned browser-local persistence with JSON export/import
 - Hosted as a browser-based app without an application server
 
+## Compatibility note
+
+GymDeck’s workout interface is mobile-first and works as a manual tracker on a phone. WebMCP availability comes from the host browser. At the time of submission, ChatGPT’s mobile app opens the site without Site tools, so the complete agent workflow is demonstrated in ChatGPT’s desktop in-app browser or Chrome with WebMCP enabled.
+
 ## Links
 
 - Live app: https://gymdeck.yanbocheng01234.chatgpt.site

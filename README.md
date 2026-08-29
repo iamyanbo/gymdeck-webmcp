@@ -80,6 +80,10 @@ GymDeck exposes twenty-one tools. Read tools inspect the current workspace; writ
 - No application server, external database, authentication, or API key
 - The external agent comes from a WebMCP-capable browser; GymDeck does not include a fake chatbot
 
+## Compatibility note
+
+The workout interface is responsive and designed for use on a phone. WebMCP support depends on the browser hosting the site: ChatGPT’s current mobile app opens GymDeck as a normal web page without Site tools. The full agent workflow is available in ChatGPT’s desktop in-app browser or Chrome with WebMCP enabled. The mobile app remains fully usable for manual workout tracking.
+
 ## Run locally
 
 Requirements: Node.js 22.13 or newer.
