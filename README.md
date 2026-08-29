@@ -1,68 +1,82 @@
 # GymDeck
 
-GymDeck is a local-first workout workspace built for people and browser agents to use together. It creates training plans, tracks sets, reps, weights, and effort, adapts active workouts, and turns exercise history into transparent progression suggestions.
+GymDeck is a workout tracker for the part of training that most apps ignore: the plan changes once you are actually at the gym.
 
-**Live app:** [gymdeck.yanbocheng01234.chatgpt.site](https://gymdeck.yanbocheng01234.chatgpt.site)
+You can build a weekly plan, log sets and cardio, swap an exercise when equipment is busy, and use your past performance to decide what to do next. A browser agent can work with the same workout state through WebMCP, so a short request can make a real change in the app instead of just producing advice in a chat.
 
-## Why WebMCP
+**Try GymDeck:** [gymdeck.yanbocheng01234.chatgpt.site](https://gymdeck.yanbocheng01234.chatgpt.site)
 
-GymDeck is most useful in the middle of a workout, when plans need to change quickly. A person can log sets through the touch-friendly interface while an external browser agent reads the same live state and handles multi-step changes such as:
+## Why WebMCP fits
+
+Gym sessions are rarely perfectly predictable. The cable machine is taken, a shoulder movement does not feel right, or there is only twenty minutes left. GymDeck lets a person handle the quick physical work—logging a set or starting a rest timer—while an external browser agent handles structured changes such as:
 
 > The cable machine is busy and I only have 20 minutes. Replace cable rows with a dumbbell alternative and shorten the remaining workout without removing anything I completed.
 
-The agent does not guess its way through buttons or rely on a chatbot embedded in the app. GymDeck registers structured tools with `document.modelContext.registerTool()`. Those tools use the same state-management functions as the normal interface, update the visible page immediately, and persist their changes in the browser.
+The agent reads and changes GymDeck through `document.modelContext.registerTool()`. The tools call the same state functions as the normal interface, so agent changes appear in the UI immediately, are recorded in the activity history, can be undone, and survive a refresh.
 
-## Product experience
+## What is included
 
-- Mobile-first workout logging with large touch targets and a rest timer
-- Editable target and actual sets, reps, weights, notes, and effort ratings
-- Multi-day training plans, timed cardio blocks, and a searchable exercise library
-- Exercise swaps that preserve completed sets and record the reason
-- Dynamic shortening, skipping, reordering, and set additions
-- Browser-local persistence, versioned data, JSON export/import, and demo reset
-- Seeded bench-press history, progress charts, records, and training volume
-- Transparent next-session load suggestions that can be accepted, edited, or ignored
-- Undoable activity history for both human and agent changes
+- A mobile-first workout screen for quick set logging, rest timers, notes, effort ratings, and cardio
+- Multi-day plans with editable exercises, sets, reps, weight, rest time, and order
+- Exercise swaps that preserve completed work and record why the change happened
+- A built-in exercise library plus custom exercises
+- Progress charts, volume, consistency, personal records, and recent performance
+- Transparent next-session weight suggestions that can be accepted, edited, or ignored
+- Local persistence, demo data, JSON export/import, and a reset option
+- An activity history showing both human and agent changes, with undo
 
 ## WebMCP tools
 
-GymDeck registers twenty-one JavaScript tools from the top-level page:
+GymDeck exposes twenty-one tools. Read tools inspect the current workspace; write tools update it and return a concise result describing the change.
 
-| Tool | Type | Purpose |
-| --- | --- | --- |
-| `get_athlete_profile` | Read | Read goals, units, experience, equipment, and schedule |
-| `get_today_workout` | Read | Read exercise order, prescriptions, completed sets, and status |
-| `get_training_plan` | Read | Read every saved day and prescription before editing the plan |
-| `search_exercises` | Read | Search by name, muscle, movement, or equipment |
-| `get_exercise_history` | Read | Read recorded performance for an exercise |
-| `get_progress_summary` | Read | Read volume, consistency, records, and recent performance |
-| `get_weekly_summary` | Read | Summarize the previous seven days |
-| `create_training_plan` | Write | Create a multi-day training plan |
-| `prepare_focused_workout` | Write | Turn a short focus request into today’s complete workout or a saved plan day |
-| `set_plan_day` | Write | Create or replace a day with an exact exercise list |
-| `edit_plan_day` | Write | Rename/delete a day or add, update, remove, and reorder plan exercises |
-| `load_plan_day` | Write | Load a named saved day into Today’s Workout |
-| `add_cardio_block` | Write | Add timed treadmill, bike, rower, stair-climber, or elliptical work |
-| `undo_last_change` | Write | Undo the most recent visible GymDeck change |
-| `add_exercise` | Write | Add an exercise and prescription to today’s workout |
-| `update_exercise_prescription` | Write | Change sets, reps, weight, or rest time |
-| `swap_exercise` | Write | Replace an exercise while preserving completed history |
-| `log_set` | Write | Record a completed set |
-| `edit_set` | Write | Correct a logged set |
-| `adjust_current_workout` | Write | Shorten, skip, add a set, or reorder exercises |
-| `recommend_next_session` | Write | Save explainable progression recommendations |
+| Tool | What it does |
+| --- | --- |
+| `get_athlete_profile` | Read the athlete’s goals, units, experience, equipment, and schedule |
+| `get_today_workout` | Read today’s exercises, prescriptions, completed sets, and status |
+| `get_training_plan` | Read every saved training day and prescription |
+| `search_exercises` | Search the exercise library |
+| `get_exercise_history` | Read past performance for an exercise |
+| `get_progress_summary` | Read volume, consistency, records, and recent performance |
+| `get_weekly_summary` | Summarize the previous seven days |
+| `create_training_plan` | Create a multi-day plan |
+| `prepare_focused_workout` | Turn a short focus request into today’s workout or a saved plan day |
+| `set_plan_day` | Create or replace a saved day with an exact exercise list |
+| `edit_plan_day` | Rename, delete, add, update, remove, or reorder plan exercises |
+| `load_plan_day` | Load a saved day into today’s workout |
+| `add_cardio_block` | Add timed treadmill, bike, rower, stair-climber, or elliptical work |
+| `undo_last_change` | Undo the most recent GymDeck change |
+| `add_exercise` | Add an exercise to today’s workout |
+| `update_exercise_prescription` | Change sets, reps, weight, or rest time |
+| `swap_exercise` | Replace an exercise while preserving completed history |
+| `log_set` | Record a completed set |
+| `edit_set` | Correct a logged set |
+| `adjust_current_workout` | Shorten, skip, add a set, or reorder the current workout |
+| `recommend_next_session` | Save an explainable progression suggestion |
 
-Read tools are marked with `readOnlyHint`. Write tools describe their side effects, update the visible workspace, return a concise verification result, and add an entry to GymDeck’s activity history.
+## Try the agent workflow
 
-## Architecture
+1. Open the live app in ChatGPT’s in-app browser.
+2. Open **Site tools** in the address bar and confirm that GymDeck exposes twenty-one tools.
+3. Reset or load the demo athlete if needed.
+4. Ask the agent:
 
-- React 19 and TypeScript
+   > Make me a shoulders and arms workout for today.
+
+5. Then ask:
+
+   > Add 20 minutes on the bike.
+
+6. Check that both changes appear in Today’s Workout and Activity History.
+7. Log a set manually, ask the agent to read the new history, and request a next-session recommendation.
+8. Refresh the page and confirm that the workout and history are still there.
+
+## How it works
+
+- React and TypeScript
 - Vinext/Vite deployment targeting Cloudflare Workers through ChatGPT Sites
+- Browser-local, versioned `localStorage` data with automatic migration
 - No application server, external database, authentication, or API key
-- A versioned `localStorage` workspace under `gymdeck-workspace-v1`, with automatic migration that merges newly shipped exercises and cardio machines into older saved workspaces
-- The external agent is supplied by a WebMCP-capable browser; GymDeck does not ship a fake chatbot
-
-All athlete data remains in the current browser unless the user explicitly exports it. Every judge or visitor starts with an isolated demo workspace on their own device.
+- The external agent comes from a WebMCP-capable browser; GymDeck does not include a fake chatbot
 
 ## Run locally
 
@@ -73,36 +87,18 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by the development server. The complete manual interface works in a standard browser. Agent tools require ChatGPT’s WebMCP-capable in-app browser or Chrome with WebMCP testing enabled.
-
-## Test the agent workflow
-
-1. Open the live app in ChatGPT’s in-app browser.
-2. Open **Site tools** in the address bar and confirm that GymDeck exposes twenty-one tools.
-3. Load or reset the demo athlete if needed.
-4. Send this prompt to the browser agent:
-
-   > Read today’s workout and my recent bench-press history. The cable machine is busy and I only have 20 minutes. Replace Seated Cable Row with Chest-Supported Row, preserve completed work, and shorten the remaining workout.
-
-5. Confirm that the workout and activity history update visibly.
-6. Log a bench-press set manually, then ask the agent to read it and recommend the next session.
-7. Accept or edit the recommendation from Progress and refresh the page to prove persistence.
-8. Ask: “Make me a shoulders and arms workout for today.” Then follow with: “Add 20 minutes on the bike.” Confirm both changes appear immediately in the visible workout and activity history.
-
-Current ChatGPT documentation recommends GPT-5.6 Sol or GPT-5.6 Terra for site tools and notes that availability depends on the desktop app version and account rollout.
+The manual interface works in a standard browser. Agent tools require ChatGPT’s WebMCP-capable in-app browser or Chrome with WebMCP testing enabled.
 
 ## Validation
 
 ```bash
-npm run build
 npm test
+npm run lint
 ```
 
-The focused tests verify the production-rendered product shell, browser persistence marker, and core WebMCP tool surface.
+## Safety
 
-## Safety and privacy
-
-GymDeck provides transparent training suggestions, not medical advice or injury diagnosis. Users remain in control of every change and can inspect or undo recent activity. Workout data stays local unless exported.
+GymDeck provides training suggestions, not medical advice or injury diagnosis. The user remains in control of every change.
 
 ## License
 
