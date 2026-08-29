@@ -16,7 +16,7 @@ The agent does not guess its way through buttons or rely on a chatbot embedded i
 
 - Mobile-first workout logging with large touch targets and a rest timer
 - Editable target and actual sets, reps, weights, notes, and effort ratings
-- Multi-day training plans and a searchable exercise library
+- Multi-day training plans, timed cardio blocks, and a searchable exercise library
 - Exercise swaps that preserve completed sets and record the reason
 - Dynamic shortening, skipping, reordering, and set additions
 - Browser-local persistence, versioned data, JSON export/import, and demo reset
@@ -26,7 +26,7 @@ The agent does not guess its way through buttons or rely on a chatbot embedded i
 
 ## WebMCP tools
 
-GymDeck registers fourteen JavaScript tools from the top-level page:
+GymDeck registers sixteen JavaScript tools from the top-level page:
 
 | Tool | Type | Purpose |
 | --- | --- | --- |
@@ -37,6 +37,8 @@ GymDeck registers fourteen JavaScript tools from the top-level page:
 | `get_progress_summary` | Read | Read volume, consistency, records, and recent performance |
 | `get_weekly_summary` | Read | Summarize the previous seven days |
 | `create_training_plan` | Write | Create a multi-day training plan |
+| `add_workout_day` | Write | Add a focused day such as shoulders and arms to the active plan |
+| `add_cardio_block` | Write | Add timed treadmill, bike, rower, stair-climber, or elliptical work |
 | `add_exercise` | Write | Add an exercise and prescription to today’s workout |
 | `update_exercise_prescription` | Write | Change sets, reps, weight, or rest time |
 | `swap_exercise` | Write | Replace an exercise while preserving completed history |
@@ -71,7 +73,7 @@ Open the local URL printed by the development server. The complete manual interf
 ## Test the agent workflow
 
 1. Open the live app in ChatGPT’s in-app browser.
-2. Open **Site tools** in the address bar and confirm that GymDeck exposes fourteen tools.
+2. Open **Site tools** in the address bar and confirm that GymDeck exposes sixteen tools.
 3. Load or reset the demo athlete if needed.
 4. Send this prompt to the browser agent:
 
@@ -80,6 +82,7 @@ Open the local URL printed by the development server. The complete manual interf
 5. Confirm that the workout and activity history update visibly.
 6. Log a bench-press set manually, then ask the agent to read it and recommend the next session.
 7. Accept or edit the recommendation from Progress and refresh the page to prove persistence.
+8. Ask: “Add a Shoulders & Arms day to my plan,” then: “Add 20 minutes of cardio on the Stationary Bike after today’s strength work.” Confirm both changes appear immediately in the visible plan/workout and activity history.
 
 Current ChatGPT documentation recommends GPT-5.6 Sol or GPT-5.6 Terra for site tools and notes that availability depends on the desktop app version and account rollout.
 

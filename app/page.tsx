@@ -23,6 +23,7 @@ type ExerciseDefinition = {
   movement: string;
   instructions: string;
   alternatives: string[];
+  category?: "strength" | "cardio";
   custom?: boolean;
 };
 
@@ -34,6 +35,7 @@ type SetLog = {
   effort: number;
   completed: boolean;
   note: string;
+  durationMinutes?: number;
 };
 
 type WorkoutExercise = {
@@ -45,6 +47,7 @@ type WorkoutExercise = {
   restSeconds: number;
   skipped: boolean;
   swapReason?: string;
+  durationMinutes?: number;
   sets: SetLog[];
 };
 
@@ -66,6 +69,7 @@ type Prescription = {
   reps: number;
   weight: number;
   restSeconds: number;
+  durationMinutes?: number;
 };
 
 type PlanDay = {
@@ -91,6 +95,7 @@ type HistoryEntry = {
   reps: number;
   sets: number;
   volume: number;
+  durationMinutes?: number;
 };
 
 type Recommendation = {
@@ -176,7 +181,13 @@ const BASE_LIBRARY: ExerciseDefinition[] = [
   { id: "assisted-pullup", name: "Assisted Pull-Up", muscle: "Lats", equipment: "Machine", movement: "Vertical pull", instructions: "Start from a controlled hang and drive elbows down.", alternatives: ["lat-pulldown", "one-arm-row"] },
   { id: "curl", name: "Dumbbell Curl", muscle: "Biceps", equipment: "Dumbbells", movement: "Elbow flexion", instructions: "Keep elbows quiet and lower through a full range.", alternatives: ["cable-curl"] },
   { id: "cable-curl", name: "Cable Curl", muscle: "Biceps", equipment: "Cable", movement: "Elbow flexion", instructions: "Keep the shoulders still and squeeze at the top.", alternatives: ["curl"] },
+  { id: "triceps-extension", name: "Dumbbell Triceps Extension", muscle: "Triceps", equipment: "Dumbbells", movement: "Elbow extension", instructions: "Keep elbows pointed forward and lower the dumbbell with control.", alternatives: ["push-up"] },
   { id: "push-up", name: "Push-Up", muscle: "Chest", equipment: "Bodyweight", movement: "Horizontal push", instructions: "Keep a straight line from shoulders to heels and lower as one unit.", alternatives: ["bench-press", "db-bench"] },
+  { id: "treadmill", name: "Treadmill", muscle: "Cardio", equipment: "Treadmill", movement: "Steady-state cardio", instructions: "Choose a sustainable pace, keep posture tall, and ease into the first few minutes.", alternatives: ["stationary-bike", "elliptical"], category: "cardio" },
+  { id: "stationary-bike", name: "Stationary Bike", muscle: "Cardio", equipment: "Bike", movement: "Low-impact cardio", instructions: "Set a smooth resistance and maintain a pace you can sustain for the full block.", alternatives: ["treadmill", "elliptical"], category: "cardio" },
+  { id: "rowing-machine", name: "Rowing Machine", muscle: "Cardio", equipment: "Rower", movement: "Full-body cardio", instructions: "Drive with the legs, then the torso and arms; return in the reverse order.", alternatives: ["stationary-bike", "treadmill"], category: "cardio" },
+  { id: "stair-climber", name: "Stair Climber", muscle: "Cardio", equipment: "Stair machine", movement: "Upright cardio", instructions: "Use a controlled step rhythm and avoid leaning heavily on the rails.", alternatives: ["treadmill", "elliptical"], category: "cardio" },
+  { id: "elliptical", name: "Elliptical", muscle: "Cardio", equipment: "Elliptical", movement: "Low-impact cardio", instructions: "Keep an easy, even stride and adjust resistance before starting the block.", alternatives: ["stationary-bike", "treadmill"], category: "cardio" },
 ];
 
 function createSets(count: number, reps: number, weight: number): SetLog[] {
@@ -193,6 +204,11 @@ function createSets(count: number, reps: number, weight: number): SetLog[] {
 
 function workoutExercise(libraryId: string, name: string, muscle: string, equipment: string, setCount: number, reps: number, weight: number, restSeconds: number): WorkoutExercise {
   return { id: `work-${libraryId}`, libraryId, name, muscle, equipment, restSeconds, skipped: false, sets: createSets(setCount, reps, weight) };
+}
+
+function cardioWorkoutExercise(definition: ExerciseDefinition, durationMinutes: number): WorkoutExercise {
+  const [cardioSet] = createSets(1, 0, 0);
+  return { ...workoutExercise(definition.id, definition.name, definition.muscle, definition.equipment, 1, 0, 0, 0), durationMinutes, sets: [{ ...cardioSet, durationMinutes }] };
 }
 
 function buildDemoState(): AppState {
@@ -247,6 +263,7 @@ function buildDemoState(): AppState {
 
 function prescriptionToWorkoutExercise(prescription: Prescription, library: ExerciseDefinition[]): WorkoutExercise {
   const definition = library.find((item) => item.id === prescription.libraryId);
+  if (prescription.durationMinutes) return cardioWorkoutExercise(definition ?? { id: prescription.libraryId, name: prescription.name, muscle: "Cardio", equipment: "Cardio machine", movement: "Cardio", instructions: "", alternatives: [], category: "cardio" }, prescription.durationMinutes);
   return workoutExercise(prescription.libraryId, prescription.name, definition?.muscle ?? "Custom", definition?.equipment ?? "Other", prescription.sets, prescription.reps, prescription.weight, prescription.restSeconds);
 }
 
@@ -256,7 +273,7 @@ function totalSetCount(workout: Workout) { return workout.exercises.reduce((tota
 function totalVolume(history: HistoryEntry[]) { return history.reduce((total, item) => total + item.volume, 0); }
 
 function buildRecommendations(state: AppState): Recommendation[] {
-  return state.currentWorkout.exercises.filter((exercise) => !exercise.skipped && exercise.sets.some((set) => set.completed)).map((exercise) => {
+  return state.currentWorkout.exercises.filter((exercise) => !exercise.durationMinutes && !exercise.skipped && exercise.sets.some((set) => set.completed)).map((exercise) => {
     const completed = exercise.sets.filter((set) => set.completed);
     const allTargetsHit = completed.length === exercise.sets.length && completed.every((set) => set.actualReps >= set.targetReps);
     const averageEffort = completed.reduce((sum, set) => sum + set.effort, 0) / completed.length;
@@ -357,7 +374,7 @@ export default function Home() {
       if (targetSet.completed) {
         draft.currentWorkout.status = "active";
         draft.currentWorkout.startedAt ||= new Date().toISOString();
-        draft.history.push({ id: uid("history"), date: draft.currentWorkout.date, exerciseId: target.libraryId, exerciseName: target.name, weight: targetSet.weight, reps: targetSet.actualReps, sets: 1, volume: targetSet.weight * targetSet.actualReps });
+        draft.history.push({ id: uid("history"), date: draft.currentWorkout.date, exerciseId: target.libraryId, exerciseName: target.name, weight: targetSet.weight, reps: targetSet.actualReps, sets: 1, volume: targetSet.weight * targetSet.actualReps, durationMinutes: target.durationMinutes });
       } else {
         const historyIndex = [...draft.history].reverse().findIndex((entry) => entry.date === draft.currentWorkout.date && entry.exerciseName === target.name && entry.weight === targetSet.weight && entry.reps === targetSet.actualReps);
         if (historyIndex >= 0) draft.history.splice(draft.history.length - 1 - historyIndex, 1);
@@ -381,8 +398,9 @@ export default function Home() {
   }, [commit]);
 
   const addExerciseToWorkout = useCallback((definition: ExerciseDefinition, source: Activity["source"] = "You", sets = 3, reps = 10, weight = 0) => {
-    return commit(`Added ${definition.name} to today’s workout.`, source, (draft) => {
-      draft.currentWorkout.exercises.push(workoutExercise(definition.id, definition.name, definition.muscle, definition.equipment, sets, reps, weight, 75));
+    const isCardio = definition.category === "cardio";
+    return commit(`Added ${isCardio ? "a 20 min " : ""}${definition.name} ${isCardio ? "cardio block" : "to today’s workout"}.`, source, (draft) => {
+      draft.currentWorkout.exercises.push(isCardio ? cardioWorkoutExercise(definition, 20) : workoutExercise(definition.id, definition.name, definition.muscle, definition.equipment, sets, reps, weight, 75));
     });
   }, [commit]);
 
@@ -410,9 +428,66 @@ export default function Home() {
         });
         return `Created ${String(name)} with ${count} training days.`;
       } },
+      { name: "add_workout_day", title: "Add focused workout day", description: "Add a focused workout day directly to the active plan. Use this when someone asks for a day such as shoulders and arms, push, pull, legs, or upper body. It selects relevant exercises from GymDeck’s library, updates the visible plan, and records the change.", inputSchema: objectSchema({ focus: { type: "string", description: "The requested workout focus, such as 'shoulders and arms'." }, label: { type: "string", description: "Optional short label for the workout day." } }, ["focus"]), annotations: write, execute: async ({ focus, label }) => {
+        const requestedFocus = String(focus).trim();
+        const normalizedFocus = requestedFocus.toLowerCase();
+        const presets = normalizedFocus.includes("shoulder") || normalizedFocus.includes("arm")
+          ? [
+              { id: "overhead-press", sets: 3, reps: 8, weight: 65, restSeconds: 120 },
+              { id: "lateral-raise", sets: 3, reps: 15, weight: 15, restSeconds: 60 },
+              { id: "curl", sets: 3, reps: 12, weight: 25, restSeconds: 60 },
+              { id: "triceps-extension", sets: 3, reps: 12, weight: 20, restSeconds: 60 },
+            ]
+          : normalizedFocus.includes("leg") || normalizedFocus.includes("lower")
+            ? [
+                { id: "back-squat", sets: 3, reps: 8, weight: 135, restSeconds: 120 },
+                { id: "romanian-deadlift", sets: 3, reps: 10, weight: 115, restSeconds: 120 },
+                { id: "leg-curl", sets: 3, reps: 12, weight: 90, restSeconds: 75 },
+              ]
+            : normalizedFocus.includes("pull") || normalizedFocus.includes("back")
+              ? [
+                  { id: "chest-row", sets: 3, reps: 10, weight: 50, restSeconds: 90 },
+                  { id: "lat-pulldown", sets: 3, reps: 10, weight: 100, restSeconds: 90 },
+                  { id: "curl", sets: 3, reps: 12, weight: 25, restSeconds: 60 },
+                ]
+              : [
+                  { id: "bench-press", sets: 3, reps: 8, weight: 135, restSeconds: 120 },
+                  { id: "one-arm-row", sets: 3, reps: 10, weight: 45, restSeconds: 90 },
+                  { id: "lateral-raise", sets: 3, reps: 15, weight: 15, restSeconds: 60 },
+                ];
+        const dayLabel = String(label ?? "").trim() || `Day ${stateRef.current.plan.days.length + 1}`;
+        const dayFocus = requestedFocus || "Focused training";
+        let addedExercises: string[] = [];
+        commit(`Agent added ${dayFocus} to ${stateRef.current.plan.name}.`, "Agent", (draft) => {
+          const exercises = presets.map((prescription) => {
+            const exercise = draft.library.find((item) => item.id === prescription.id)!;
+            return { id: uid("prescription"), libraryId: exercise.id, name: exercise.name, sets: prescription.sets, reps: prescription.reps, weight: prescription.weight, restSeconds: prescription.restSeconds };
+          });
+          addedExercises = exercises.map((exercise) => exercise.name);
+          draft.plan.days.push({ id: uid("day"), label: dayLabel, focus: dayFocus, exercises });
+        });
+        return `Added ${dayFocus} as ${dayLabel}: ${addedExercises.join(", ")}.`;
+      } },
+      { name: "add_cardio_block", title: "Add timed cardio", description: "Add a timed cardio block after today’s strength work. Use this when someone says they want 20 minutes of cardio and specifies or needs to choose a treadmill, stationary bike, rowing machine, stair climber, or elliptical. Cardio is logged as duration, not fake reps or weight.", inputSchema: objectSchema({ machine: { type: "string", enum: ["Treadmill", "Stationary Bike", "Rowing Machine", "Stair Climber", "Elliptical"], description: "The cardio machine to use." }, durationMinutes: { type: "integer", minimum: 5, maximum: 180, description: "Planned cardio duration in minutes." }, destination: { type: "string", enum: ["today", "plan"], description: "Add to the end of today’s workout (default) or the newest plan day." } }, ["machine", "durationMinutes"]), annotations: write, execute: async ({ machine, durationMinutes, destination }) => {
+        const definition = stateRef.current.library.find((item) => item.category === "cardio" && item.name.toLowerCase() === String(machine).toLowerCase());
+        const minutes = Math.round(Number(durationMinutes));
+        if (!definition || !Number.isFinite(minutes) || minutes < 5 || minutes > 180) return "Choose a supported cardio machine and a duration from 5 to 180 minutes.";
+        const target = String(destination ?? "today");
+        commit(`Agent added ${minutes} min of ${definition.name} cardio after the strength work.`, "Agent", (draft) => {
+          if (target === "plan") {
+            const day = draft.plan.days.at(-1);
+            if (!day) return;
+            day.exercises.push({ id: uid("prescription"), libraryId: definition.id, name: definition.name, sets: 1, reps: 0, weight: 0, restSeconds: 0, durationMinutes: minutes });
+          } else {
+            draft.currentWorkout.exercises.push(cardioWorkoutExercise(definition, minutes));
+          }
+        });
+        return `Added ${minutes} minutes of ${definition.name} ${target === "plan" ? "to the end of the newest plan day" : "after today’s strength work"}.`;
+      } },
       { name: "add_exercise", title: "Add exercise", description: "Add an exercise from the GymDeck library to today’s workout with a target prescription.", inputSchema: objectSchema({ exerciseName: { type: "string" }, sets: { type: "integer", minimum: 1, maximum: 10 }, reps: { type: "integer", minimum: 1, maximum: 100 }, weight: { type: "number", minimum: 0 } }, ["exerciseName", "sets", "reps", "weight"]), annotations: write, execute: async ({ exerciseName, sets, reps, weight }) => {
         const definition = stateRef.current.library.find((item) => item.name.toLowerCase() === String(exerciseName).toLowerCase());
         if (!definition) return `Exercise not found: ${String(exerciseName)}. Use search_exercises first.`;
+        if (definition.category === "cardio") return "Use add_cardio_block for a timed cardio session so GymDeck records minutes instead of reps and weight.";
         addExerciseToWorkout(definition, "Agent", Number(sets), Number(reps), Number(weight));
         return `Added ${definition.name}: ${Number(sets)} sets × ${Number(reps)} reps at ${Number(weight)} ${stateRef.current.athlete.unit}.`;
       } },
@@ -466,8 +541,8 @@ export default function Home() {
       } },
       { name: "get_progress_summary", title: "Get progress summary", description: "Read overall training volume, workout completion, current personal records, consistency, and recent performance.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => {
         const current = stateRef.current;
-        const prs = Object.values(current.history.reduce<Record<string, HistoryEntry>>((acc, entry) => { if (!acc[entry.exerciseName] || entry.weight > acc[entry.exerciseName].weight) acc[entry.exerciseName] = entry; return acc; }, {}));
-        return JSON.stringify({ totalVolume: totalVolume(current.history), unit: current.athlete.unit, loggedSets: current.history.reduce((sum, item) => sum + item.sets, 0), trainingDays: new Set(current.history.map((item) => item.date)).size, personalRecords: prs });
+        const prs = Object.values(current.history.filter((entry) => !entry.durationMinutes).reduce<Record<string, HistoryEntry>>((acc, entry) => { if (!acc[entry.exerciseName] || entry.weight > acc[entry.exerciseName].weight) acc[entry.exerciseName] = entry; return acc; }, {}));
+        return JSON.stringify({ totalVolume: totalVolume(current.history), cardioMinutes: current.history.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0), unit: current.athlete.unit, loggedSets: current.history.reduce((sum, item) => sum + item.sets, 0), trainingDays: new Set(current.history.map((item) => item.date)).size, personalRecords: prs });
       } },
       { name: "recommend_next_session", title: "Recommend next session", description: "Calculate and save transparent load recommendations from the completed sets in today’s workout.", inputSchema: objectSchema({}), annotations: write, execute: async () => {
         const recommendations = buildRecommendations(stateRef.current);
@@ -476,7 +551,7 @@ export default function Home() {
       } },
       { name: "get_weekly_summary", title: "Get weekly summary", description: "Summarize the athlete’s last seven days of training, volume, exercises, and notable progress.", inputSchema: objectSchema({}), annotations: readOnly, execute: async () => {
         const cutoff = isoDate(-7); const entries = stateRef.current.history.filter((entry) => entry.date >= cutoff);
-        return JSON.stringify({ period: `${cutoff} to ${isoDate()}`, loggedSets: entries.reduce((sum, item) => sum + item.sets, 0), totalVolume: totalVolume(entries), exercises: [...new Set(entries.map((item) => item.exerciseName))], topSet: entries.sort((a, b) => b.weight - a.weight)[0] ?? null });
+        return JSON.stringify({ period: `${cutoff} to ${isoDate()}`, loggedSets: entries.reduce((sum, item) => sum + item.sets, 0), totalVolume: totalVolume(entries), cardioMinutes: entries.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0), exercises: [...new Set(entries.map((item) => item.exerciseName))], topSet: entries.sort((a, b) => b.weight - a.weight)[0] ?? null });
       } },
     ];
     Promise.allSettled(tools.map((tool) => modelContext.registerTool(tool, { signal: controller.signal }))).then((results) => setWebMcpStatus(results.every((result) => result.status === "fulfilled") ? "ready" : "unavailable"));
@@ -538,7 +613,7 @@ export default function Home() {
           <NavButton active={view === "library"} icon="＋" label="Exercises" onClick={() => setView("library")} />
         </nav>
         <div className="sidebar-bottom">
-          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Agent ready" : webMcpStatus === "registering" ? "Connecting tools" : "Browser mode"}</strong><small>{webMcpStatus === "ready" ? "14 WebMCP tools live" : "Tools activate in WebMCP"}</small></div></div>
+          <div className={`agent-status ${webMcpStatus}`}><span className="status-dot" /><div><strong>{webMcpStatus === "ready" ? "Ready when you are" : webMcpStatus === "registering" ? "Connecting tools" : "Browser mode"}</strong><small>{webMcpStatus === "ready" ? "16 WebMCP tools live" : "Tools activate in WebMCP"}</small></div></div>
           <button className="profile-card" onClick={() => setProfileOpen(true)}><span className="avatar">{state.athlete.name.slice(0, 1).toUpperCase()}</span><span><strong>{state.athlete.name}</strong><small>{state.athlete.goal} · {state.athlete.experience}</small></span><span className="chevron">›</span></button>
         </div>
       </aside>
@@ -560,11 +635,11 @@ export default function Home() {
               {currentWorkout.exercises.map((exercise, exerciseIndex) => {
                 const complete = exercise.sets.filter((set) => set.completed).length; const expanded = expandedExercise === exercise.id;
                 return <article className={`exercise-card ${expanded ? "expanded" : ""} ${exercise.skipped ? "skipped" : ""}`} key={exercise.id}>
-                  <button className="exercise-summary" onClick={() => setExpandedExercise(expanded ? "" : exercise.id)}><span className="exercise-order">{String(exerciseIndex + 1).padStart(2, "0")}</span><span className="exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.equipment}{exercise.swapReason ? ` · Swapped: ${exercise.swapReason}` : ""}</small></span><span className="set-count">{complete}/{exercise.sets.length} sets</span><span className={`expand-icon ${expanded ? "open" : ""}`}>⌄</span></button>
+                  <button className="exercise-summary" onClick={() => setExpandedExercise(expanded ? "" : exercise.id)}><span className="exercise-order">{String(exerciseIndex + 1).padStart(2, "0")}</span><span className="exercise-copy"><strong>{exercise.name}</strong><small>{exercise.muscle} · {exercise.equipment}{exercise.swapReason ? ` · Swapped: ${exercise.swapReason}` : ""}</small></span><span className="set-count">{exercise.durationMinutes ? `${exercise.durationMinutes} min` : `${complete}/${exercise.sets.length} sets`}</span><span className={`expand-icon ${expanded ? "open" : ""}`}>⌄</span></button>
                   {expanded && <div className="exercise-detail">
-                    <div className="set-table-header"><span>SET</span><span>WEIGHT ({state.athlete.unit.toUpperCase()})</span><span>REPS</span><span>EFFORT</span><span>DONE</span></div>
+                    {exercise.durationMinutes ? <div className="cardio-detail"><span className="eyebrow">CARDIO BLOCK</span><strong>{exercise.durationMinutes} minutes on the {exercise.name}</strong><p>Log it when you finish. Your duration stays in the workout history without being treated as reps or weight.</p><div><label>Effort<select value={exercise.sets[0]?.effort ?? 7} onChange={(event) => updateSet(exercise.id, 0, "effort", event.target.value)}>{[5,6,7,8,9,10].map((value) => <option key={value} value={value}>{value}/10</option>)}</select></label><button className="primary-button" onClick={() => logSetById(exercise.id, 0)}>{exercise.sets[0]?.completed ? "✓ Completed" : "Complete cardio"}</button></div></div> : <><div className="set-table-header"><span>SET</span><span>WEIGHT ({state.athlete.unit.toUpperCase()})</span><span>REPS</span><span>EFFORT</span><span>DONE</span></div>
                     {exercise.sets.map((set, setIndex) => <div className={`set-row ${set.completed ? "done" : ""}`} key={set.id}><span className="set-number">{setIndex + 1}</span><label><span className="sr-only">Weight for set {setIndex + 1}</span><input type="number" min="0" value={set.weight} onChange={(event) => updateSet(exercise.id, setIndex, "weight", event.target.value)} /></label><label><span className="sr-only">Reps for set {setIndex + 1}</span><input type="number" min="0" value={set.actualReps} onChange={(event) => updateSet(exercise.id, setIndex, "actualReps", event.target.value)} /></label><label><span className="sr-only">Effort for set {setIndex + 1}</span><select value={set.effort} onChange={(event) => updateSet(exercise.id, setIndex, "effort", event.target.value)}>{[5,6,7,8,9,10].map((value) => <option key={value} value={value}>{value}/10</option>)}</select></label><button className="complete-set" onClick={() => logSetById(exercise.id, setIndex)} aria-label={`${set.completed ? "Reopen" : "Complete"} set ${setIndex + 1}`}>{set.completed ? "✓" : ""}</button></div>)}
-                    <div className="exercise-footer"><span>Rest {Math.floor(exercise.restSeconds / 60)}:{String(exercise.restSeconds % 60).padStart(2, "0")}</span><div><button onClick={() => openSwap(exercise)}>↻ Swap</button><button onClick={() => commit(`Added one set to ${exercise.name}.`, "You", (draft) => { const target = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!; const base = target.sets.at(-1)!; target.sets.push({ ...base, id: uid("set"), completed: false }); })}>＋ Set</button><button onClick={() => commit(`Skipped ${exercise.name} for today.`, "You", (draft) => { draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.skipped = true; })}>Skip</button></div></div>
+                    <div className="exercise-footer"><span>Rest {Math.floor(exercise.restSeconds / 60)}:{String(exercise.restSeconds % 60).padStart(2, "0")}</span><div><button onClick={() => openSwap(exercise)}>↻ Swap</button><button onClick={() => commit(`Added one set to ${exercise.name}.`, "You", (draft) => { const target = draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!; const base = target.sets.at(-1)!; target.sets.push({ ...base, id: uid("set"), completed: false }); })}>＋ Set</button><button onClick={() => commit(`Skipped ${exercise.name} for today.`, "You", (draft) => { draft.currentWorkout.exercises.find((item) => item.id === exercise.id)!.skipped = true; })}>Skip</button></div></div></>}
                   </div>}
                 </article>;
               })}
@@ -578,20 +653,20 @@ export default function Home() {
         </div>}
         {view === "plan" && <div className="page-content single-page">
           <div className="page-hero-row"><div><span className="eyebrow">YOUR PROGRAM</span><h1>{state.plan.name}</h1><p>{state.plan.goal}. {state.plan.days.length} sessions per week.</p></div><button className="primary-button" onClick={addPlanDay}>＋ Add training day</button></div>
-          <div className="plan-grid">{state.plan.days.map((day, dayIndex) => <article className="plan-day" key={day.id}><div className="plan-day-top"><span>{day.label}</span><strong>{day.focus}</strong><small>{day.exercises.length} exercises · {day.exercises.reduce((sum, item) => sum + item.sets, 0)} sets</small></div><div className="plan-exercises">{day.exercises.map((exercise, index) => <div key={exercise.id}><span>{index + 1}</span><strong>{exercise.name}</strong><small>{exercise.sets} × {exercise.reps} · {exercise.weight} {state.athlete.unit}</small></div>)}</div><button onClick={() => startPlanDay(day)}>Start this session <span>→</span></button><span className="day-watermark">0{dayIndex + 1}</span></article>)}</div>
+          <div className="plan-grid">{state.plan.days.map((day, dayIndex) => <article className="plan-day" key={day.id}><div className="plan-day-top"><span>{day.label}</span><strong>{day.focus}</strong><small>{day.exercises.length} exercises · {day.exercises.reduce((sum, item) => sum + item.sets, 0)} sets</small></div><div className="plan-exercises">{day.exercises.map((exercise, index) => <div key={exercise.id}><span>{index + 1}</span><strong>{exercise.name}</strong><small>{exercise.durationMinutes ? `${exercise.durationMinutes} min cardio` : `${exercise.sets} × ${exercise.reps} · ${exercise.weight} ${state.athlete.unit}`}</small></div>)}</div><button onClick={() => startPlanDay(day)}>Start this session <span>→</span></button><span className="day-watermark">0{dayIndex + 1}</span></article>)}</div>
           <section className="plan-note"><span>✦</span><div><strong>Built for collaboration</strong><p>Ask your browser agent to create a new plan, change the weekly split, or adapt a session. Every change appears here and in the activity history.</p></div></section>
         </div>}
         {view === "progress" && <div className="page-content single-page">
           <div className="page-hero-row"><div><span className="eyebrow">TRAINING MEMORY</span><h1>Progress you can act on</h1><p>Every completed set becomes context for your next session.</p></div><button className="secondary-button" onClick={() => setView("today")}>Back to workout</button></div>
-          <div className="metric-grid"><Metric label="Total volume" value={`${Math.round(totalVolume(state.history) / 1000)}k`} detail={`${state.athlete.unit} moved`} /><Metric label="Logged sets" value={String(state.history.reduce((sum, item) => sum + item.sets, 0))} detail="Across all sessions" /><Metric label="Training days" value={String(new Set(state.history.map((item) => item.date)).size)} detail="Current workspace" /><Metric label="Bench trend" value={`+${Math.max(0, (benchHistory.at(-1)?.weight ?? 0) - (benchHistory[0]?.weight ?? 0))}`} detail={`${state.athlete.unit} in 5 weeks`} /></div>
+          <div className="metric-grid"><Metric label="Total volume" value={`${Math.round(totalVolume(state.history) / 1000)}k`} detail={`${state.athlete.unit} moved`} /><Metric label="Cardio time" value={`${state.history.reduce((sum, item) => sum + (item.durationMinutes ?? 0), 0)} min`} detail="Logged conditioning" /><Metric label="Training days" value={String(new Set(state.history.map((item) => item.date)).size)} detail="Current workspace" /><Metric label="Bench trend" value={`+${Math.max(0, (benchHistory.at(-1)?.weight ?? 0) - (benchHistory[0]?.weight ?? 0))}`} detail={`${state.athlete.unit} in 5 weeks`} /></div>
           <div className="progress-grid"><section className="chart-card"><div className="chart-heading"><div><span className="eyebrow">STRENGTH TREND</span><h2>Barbell Bench Press</h2></div><span className="trend-pill">↗ Moving up</span></div><div className="bar-chart" aria-label="Bench press weight history">{benchHistory.map((entry) => <div className="bar-column" key={`${entry.id}-${entry.date}`}><span className="bar-value">{entry.weight}</span><div className="bar" style={{ height: `${Math.max(20, (entry.weight / maxBench) * 100)}%` }} /><small>{shortDate(entry.date)}</small></div>)}</div></section>
           <section className="recommendation-card"><span className="eyebrow">NEXT SESSION</span><h2>Progression suggestions</h2><div className="recommendation-list">{state.recommendations.length ? state.recommendations.map((rec) => <div className={`recommendation ${rec.status}`} key={rec.id}><div><strong>{rec.exerciseName}</strong><p>{rec.reason}</p></div><div className="recommendation-action"><span>{rec.currentWeight} → <strong>{rec.suggestedWeight} {state.athlete.unit}</strong></span>{rec.status === "pending" ? <button onClick={() => acceptRecommendation(rec.id)}>Accept</button> : <em>{rec.status}</em>}</div></div>) : <p className="empty-copy">Complete a few sets to unlock recommendations.</p>}</div></section></div>
-          <section className="history-card"><div className="chart-heading"><div><span className="eyebrow">RECENT WORK</span><h2>Training log</h2></div><button className="text-button" onClick={exportData}>Export data</button></div><div className="history-table"><div className="history-row header"><span>Date</span><span>Exercise</span><span>Top load</span><span>Reps</span><span>Volume</span></div>{[...state.history].reverse().slice(0, 8).map((entry) => <div className="history-row" key={entry.id}><span>{shortDate(entry.date)}</span><strong>{entry.exerciseName}</strong><span>{entry.weight} {state.athlete.unit}</span><span>{entry.reps}</span><span>{entry.volume.toLocaleString()}</span></div>)}</div></section>
+          <section className="history-card"><div className="chart-heading"><div><span className="eyebrow">RECENT WORK</span><h2>Training log</h2></div><button className="text-button" onClick={exportData}>Export data</button></div><div className="history-table"><div className="history-row header"><span>Date</span><span>Exercise</span><span>Load</span><span>Output</span><span>Total</span></div>{[...state.history].reverse().slice(0, 8).map((entry) => <div className="history-row" key={entry.id}><span>{shortDate(entry.date)}</span><strong>{entry.exerciseName}</strong><span>{entry.durationMinutes ? "—" : `${entry.weight} ${state.athlete.unit}`}</span><span>{entry.durationMinutes ? `${entry.durationMinutes} min` : entry.reps}</span><span>{entry.durationMinutes ? "Cardio" : entry.volume.toLocaleString()}</span></div>)}</div></section>
         </div>}
         {view === "library" && <div className="page-content single-page">
           <div className="page-hero-row"><div><span className="eyebrow">MOVEMENT LIBRARY</span><h1>Find the right next move</h1><p>Search by exercise, muscle group, movement, or equipment.</p></div><button className="primary-button" onClick={() => setCustomExerciseOpen(true)}>＋ Custom exercise</button></div>
           <div className="library-search"><span>⌕</span><input value={libraryQuery} onChange={(event) => setLibraryQuery(event.target.value)} placeholder="Search bench, back, cable…" aria-label="Search exercise library" /><small>{filteredLibrary.length} exercises</small></div>
-          <div className="library-grid">{filteredLibrary.map((exercise) => <article className="library-card" key={exercise.id}><div className="movement-mark">{exercise.muscle.slice(0, 2).toUpperCase()}</div><div className="library-copy"><span>{exercise.movement}</span><h3>{exercise.name}</h3><p>{exercise.instructions}</p><div><small>{exercise.muscle}</small><small>{exercise.equipment}</small>{exercise.custom && <small>Custom</small>}</div></div><button onClick={() => { addExerciseToWorkout(exercise); setView("today"); }}>Add to today <span>＋</span></button></article>)}</div>
+          <div className="library-grid">{filteredLibrary.map((exercise) => <article className="library-card" key={exercise.id}><div className="movement-mark">{exercise.muscle.slice(0, 2).toUpperCase()}</div><div className="library-copy"><span>{exercise.movement}</span><h3>{exercise.name}</h3><p>{exercise.instructions}</p><div><small>{exercise.muscle}</small><small>{exercise.equipment}</small>{exercise.custom && <small>Custom</small>}</div></div><button onClick={() => { addExerciseToWorkout(exercise); setView("today"); }}>{exercise.category === "cardio" ? "Add 20 min" : "Add to today"} <span>＋</span></button></article>)}</div>
         </div>}
       </section>
       <nav className="mobile-nav" aria-label="Mobile navigation"><NavButton active={view === "today"} icon="⌁" label="Today" onClick={() => setView("today")} /><NavButton active={view === "plan"} icon="▤" label="Plan" onClick={() => setView("plan")} /><NavButton active={view === "progress"} icon="↗" label="Progress" onClick={() => setView("progress")} /><NavButton active={view === "library"} icon="＋" label="Exercises" onClick={() => setView("library")} /></nav>

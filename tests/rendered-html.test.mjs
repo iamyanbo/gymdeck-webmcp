@@ -33,6 +33,8 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
     "search_exercises",
     "get_exercise_history",
     "create_training_plan",
+    "add_workout_day",
+    "add_cardio_block",
     "add_exercise",
     "update_exercise_prescription",
     "swap_exercise",
@@ -49,4 +51,6 @@ test("ships local persistence and the core WebMCP tool surface", async () => {
   assert.match(page, /modelContext\.registerTool\(tool/);
   assert.match(page, /readOnlyHint: true/);
   assert.match(page, /readOnlyHint: false/);
+  assert.match(page, /durationMinutes/);
+  assert.match(page, /Stationary Bike/);
 });
