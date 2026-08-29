@@ -1,6 +1,6 @@
 # GymDeck
 
-GymDeck is a workout tracker for the part of training that most apps ignore: the plan changes once you are actually at the gym.
+GymDeck is a workout tracker built around consistent training. It turns a plan into a simple session checklist, keeps a record of what you actually did, and uses that history to help you improve over time.
 
 You can build a weekly plan, log sets and cardio, swap an exercise when equipment is busy, and use your past performance to decide what to do next. A browser agent can work with the same workout state through WebMCP, so a short request can make a real change in the app instead of just producing advice in a chat.
 
@@ -8,11 +8,13 @@ You can build a weekly plan, log sets and cardio, swap an exercise when equipmen
 
 ## Why WebMCP fits
 
-Gym sessions are rarely perfectly predictable. The cable machine is taken, a shoulder movement does not feel right, or there is only twenty minutes left. GymDeck lets a person handle the quick physical work—logging a set or starting a rest timer—while an external browser agent handles structured changes such as:
+Training should be a routine. The harder part is knowing how to progress: when to add weight, whether to repeat a load, and how your recent sessions fit together. GymDeck gives an external browser agent the context to act like a personal trainer between sets and between sessions. It can look at your previous logs, suggest the next step, and help turn a completed workout into a better plan for next time.
+
+The agent can also help when the routine needs a practical adjustment. If equipment is taken or time is short, you can ask it to suggest a replacement or shorten the remaining workout while keeping the work you already completed. For example:
 
 > The cable machine is busy and I only have 20 minutes. Replace cable rows with a dumbbell alternative and shorten the remaining workout without removing anything I completed.
 
-The agent reads and changes GymDeck through `document.modelContext.registerTool()`. The tools call the same state functions as the normal interface, so agent changes appear in the UI immediately, are recorded in the activity history, can be undone, and survive a refresh.
+Today’s workout works like a checklist: complete each set, mark it done, and move through the session. The agent reads and changes GymDeck through `document.modelContext.registerTool()`. The tools call the same state functions as the normal interface, so agent changes appear in the UI immediately, are recorded in the activity history, can be undone, and survive a refresh.
 
 ## What is included
 
