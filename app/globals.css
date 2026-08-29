@@ -310,9 +310,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
   .set-count { display: none; }
   .expand-icon { grid-column: 3; grid-row: 1; }
   .exercise-detail { padding: 8px 11px 12px; }
-  .set-table-header, .set-row { grid-template-columns: 34px minmax(64px, 1fr) 58px 68px 36px; gap: 6px; }
+  .set-table-header, .set-row { grid-template-columns: 30px minmax(52px, 1fr) 48px 56px 32px; gap: 4px; }
   .set-table-header { font-size: 6px; }
-  .set-row input, .set-row select { padding: 0 5px; font-size: 10px; }
+  .set-row input, .set-row select { padding: 0 4px; font-size: 10px; }
   .today-rail { display: grid; grid-template-columns: 1fr; margin-top: 14px; }
   .mobile-nav { position: fixed; z-index: 50; left: 8px; right: 8px; bottom: 8px; height: 60px; display: grid; grid-template-columns: repeat(4, 1fr); padding: 4px; border: 1px solid #34372f; border-radius: 14px; background: rgba(17,19,15,.96); box-shadow: 0 14px 35px rgba(0,0,0,.2); backdrop-filter: blur(14px); }
   .mobile-nav .nav-button { min-height: 50px; display: grid; justify-items: center; align-content: center; gap: 2px; padding: 0; color: #8f9388; }
