@@ -36,13 +36,3 @@ GymDeck’s workout interface is mobile-first and works as a manual tracker on a
 
 - Live app: https://gymdeck.yanbocheng01234.chatgpt.site
 - Source code: https://github.com/iamyanbo/gymdeck-webmcp
-
-## Suggested demo sequence
-
-1. Show the live workout and open Site tools.
-2. Ask for a shoulders and arms workout.
-3. Add 20 minutes of bike cardio.
-4. Log a set manually.
-5. Ask the agent to read the history and recommend the next weight.
-6. Refresh the page to show persistence.
-7. Swap or shorten part of the workout and show the activity history and undo button.
